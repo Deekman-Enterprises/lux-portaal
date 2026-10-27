@@ -129,3 +129,21 @@ tr:last-child td{border-bottom:0}
   .modal{padding:24px 20px}
   .lichtbak .pijl{top:auto;bottom:20px;transform:none}
 }
+/* ---------- als app op de telefoon ---------- */
+.kop{padding-top:env(safe-area-inset-top)}
+body{padding-bottom:env(safe-area-inset-bottom)}
+@media (display-mode: standalone){.login-links{padding-top:calc(48px + env(safe-area-inset-top))}}
+.inst{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:30;max-width:520px;margin:0 auto;background:var(--vlak);border:1px solid var(--lijn2);border-radius:20px;padding:14px;display:flex;align-items:center;gap:12px;box-shadow:0 18px 40px rgba(0,0,0,.5);animation:instIn .35s ease-out}
+@keyframes instIn{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.inst img{width:48px;height:48px;border-radius:12px;flex:none}
+.inst-tekst{flex:1;min-width:0}
+.inst-tekst strong{display:block;font-size:15px}
+.inst-tekst span{display:block;color:var(--grijs);font-size:13px;line-height:1.45;margin-top:2px}
+.inst .btn{min-height:44px;padding:0 16px;font-size:14px;flex:none}
+.inst .icon-btn{width:36px;height:36px;border:0;background:transparent;color:var(--grijs2)}
+.inst-stappen{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:6px;color:var(--grijs);font-size:13px}
+.inst-stappen li{display:flex;align-items:center;gap:8px}
+.inst-stappen b{color:var(--tekst)}
+.inst-stappen svg{flex:none}
+.inst-knop{display:inline-flex;align-items:center;gap:8px}
+@media (prefers-reduced-motion: reduce){.inst{animation:none}}
