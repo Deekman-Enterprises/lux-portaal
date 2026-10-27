@@ -90,7 +90,7 @@
       (melding ? '<p class="melding" role="alert">' + esc(melding) + '</p>' : '') +
       '<div class="veld"><label for="l-mail">E-mailadres</label><input id="l-mail" type="email" autocomplete="email" inputmode="email" required value="' + esc(email || '') + '"></div>' +
       '<button type="submit" class="btn btn-grad">Stuur mij een inlogcode</button>' +
-      '<p class="sub" style="font-size:13px;color:#8E849A">Nog geen account? Accounts worden aangemaakt door LUX Media. <a href="mailto:thomasdeekman@lux-media.nl">Vraag toegang aan</a>.</p></form>';
+      '<p class="sub" style="font-size:13px;color:#8E849A">Nog geen klant? <a href="#/boeken">Boek een shoot</a>, dan maken wij je account aan.</p></form>';
     var f = $('#f-mail');
     $('#l-mail').focus();
     f.addEventListener('submit', function (e) {
@@ -157,7 +157,7 @@
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><b style="font-size:15px">Opslag</b><span style="color:#B3A9BD;font-size:14px"><b style="color:#F7F3FA">' + gb(j.gebruikt) + '</b> van ' + gb(j.quota) + '</span></div>' +
         '<div class="balk" role="img" aria-label="' + p + ' procent van je opslag gebruikt"><span style="width:' + p + '%"></span></div>' +
         '<span style="color:#B3A9BD;font-size:13px;line-height:1.5">' + (p >= 90 ? 'Je opslag is bijna vol. Vraag LUX om meer ruimte.' : 'Shoots van LUX tellen niet mee voor je ruimte.') + '</span></div></div>' +
-        '<section style="display:flex;flex-direction:column;gap:18px"><div class="rij"><h2 class="sectie">Van LUX Media</h2><span class="sub" style="font-size:14px">Shoots die wij voor je hebben klaargezet</span></div>' +
+        '<section style="display:flex;flex-direction:column;gap:18px"><div class="rij"><h2 class="sectie">Van LUX Media</h2><span class="sub" style="font-size:14px">Shoots die wij voor je hebben klaargezet · <a href="#/boeken">Nieuwe shoot boeken</a></span></div>' +
         (lux.length ? '<div class="albums">' + lux.map(function (a) { return albumKaart(a); }).join('') + '</div>' : '<div class="leeg">Hier verschijnen de foto’s van je shoots met LUX Media.</div>') + '</section>' +
         '<section style="display:flex;flex-direction:column;gap:18px"><div class="rij"><h2 class="sectie">Mijn albums</h2><button type="button" class="btn btn-ghost btn-klein" data-actie="nieuw-album">' + I.plus + 'Nieuw album</button></div>' +
         '<div class="albums">' + eigen.map(function (a) { return albumKaart(a); }).join('') +
@@ -369,10 +369,11 @@
   }
   function beheerScherm() {
     scherm(kop() + '<main>' + laden() + '</main>');
-    api('klanten').then(function (j) {
+    Promise.all([api('klanten'), api('aanvragen').catch(function () { return { aanvragen: [] }; })]).then(function (rr) {
+      var j = rr[0], nieuw = rr[1].aanvragen.filter(function (a) { return a.status === 'aangevraagd'; }).length;
       var k = j.klanten, totaal = k.reduce(function (t, x) { return t + Number(x.eigen || 0); }, 0);
       var vol = k.filter(function (x) { return x.quota_bytes && x.eigen / x.quota_bytes >= 0.8; }).length;
-      scherm(kop() + '<main class="in" style="gap:28px">' +
+      scherm(kop() + '<main class="in" style="gap:28px">' + beheerTabs('klanten', nieuw) +
         '<div class="rij"><div style="display:flex;flex-direction:column;gap:8px"><h1 class="titel">Klanten</h1><p class="sub">Alleen jij maakt accounts aan. Een klant krijgt een uitnodiging per mail en logt in met een code.</p></div>' +
         '<button type="button" class="btn btn-grad" data-actie="klant-nieuw">' + I.plus + 'Klant toevoegen</button></div>' +
         '<div class="stats"><div class="kaart"><span>Klanten</span><b>' + k.length + '</b></div><div class="kaart"><span>Eigen foto’s van klanten</span><b>' + gb(totaal) + '</b></div><div class="kaart"><span>Bijna vol (boven 80%)</span><b>' + vol + '</b></div></div>' +
@@ -446,11 +447,228 @@
     });
   }
 
+  /* ---------- shoot boeken (zonder inloggen) ---------- */
+  var SOORT = {
+    foto: { t: 'Fotografie', s: 'Portret, lifestyle of zakelijk', i: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>' },
+    video: { t: 'Video & film', s: 'Van clip tot bedrijfsfilm', i: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/>' },
+    drone: { t: 'Drone', s: 'Beelden vanuit de lucht', i: '<circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M7 8l3 3M17 8l-3 3M7 16l3-3M17 16l-3-3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/>' },
+    event: { t: 'Event', s: 'Feest, bruiloft of bedrijfsevent', i: '<path d="M5 21l4-12 6 6z"/><path d="M14 4v2M19 9h2M17.5 5.5l-1.5 1.5M12 9l1-1"/>' },
+    social: { t: 'Social media', s: 'Content voor Instagram & TikTok', i: '<rect x="4" y="4" width="16" height="16" rx="5"/><circle cx="12" cy="12" r="3.5"/><circle cx="17" cy="7" r="1" fill="currentColor"/>' }
+  };
+  var STATUS = [
+    ['aangevraagd', 'Aangevraagd', 'We bekijken je aanvraag en sturen je binnen 24 uur een voorstel met prijs.'],
+    ['bevestigd', 'Bevestigd', 'Je shoot staat vast. We nemen de laatste details met je door.'],
+    ['geschoten', 'Geschoten', 'Bedankt voor de shoot! We zoeken nu de beste beelden uit.'],
+    ['bewerking', 'In bewerking', 'We zijn je beelden aan het bewerken.'],
+    ['klaar', 'Klaar', 'Je beelden staan in je portaal. Log in om ze te bekijken en te downloaden.']
+  ];
+  var DAGDEEL = ['ochtend', 'middag', 'avond', 'geen voorkeur'];
+  function icoon(k, maat) { return '<svg aria-hidden="true" width="' + (maat || 26) + '" height="' + (maat || 26) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + SOORT[k].i + '</svg>'; }
+  function langeDatum(d) { if (!d) return ''; try { return new Date(d + 'T12:00:00').toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return d; } }
+  function iso(dt) { return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2); }
+  function pubKop() {
+    return '<header class="kop"><div class="kop-in"><a class="logo" href="https://lux-media.nl" aria-label="Naar lux-media.nl">' + LOGO + '<span style="display:flex;flex-direction:column;line-height:.95"><i style="font-size:15px">LUX</i><b style="font-size:17px">Media</b></span></a>' +
+      '<div class="kop-rechts">' + (T.token ? '<a class="btn btn-ghost btn-klein" href="#/">Naar mijn portaal</a>' : '<a class="btn btn-ghost btn-klein" href="#/">Inloggen</a>') + '</div></div></header>';
+  }
+
+  var B = null; // formulier-staat
+  function boekScherm() {
+    B = { soorten: [], datum: null, maand: null, bezet: [], flex: false, dagdeel: 'geen voorkeur' };
+    var nu = new Date(); B.maand = new Date(nu.getFullYear(), nu.getMonth(), 1);
+    scherm(pubKop() + '<main class="in boek">' +
+      '<div class="boek-kop"><span class="grad-text eyebrow">SHOOT BOEKEN</span><h1 class="titel">Vertel ons wat je <span class="grad-text">in gedachten</span> hebt.</h1>' +
+      '<p class="sub">Je hebt geen account nodig. Je hoort binnen 24 uur van ons met een voorstel en een prijs op maat. Aanvragen is gratis en zit nergens aan vast.</p></div>' +
+      '<form id="boek" class="boek-form" novalidate>' +
+      '<section class="kaart stap"><div class="stap-kop"><span class="nr grad">1</span><div><h2>Wat wil je laten maken?</h2><p>Kies er één of meer.</p></div></div>' +
+      '<div class="keuzes" role="group" aria-label="Soort shoot">' + Object.keys(SOORT).map(function (k) {
+        return '<label class="keuze"><input type="checkbox" name="soort" value="' + k + '"><span class="keuze-in"><span class="keuze-icoon">' + icoon(k) + '</span><b>' + SOORT[k].t + '</b><small>' + SOORT[k].s + '</small></span></label>';
+      }).join('') + '</div></section>' +
+      '<section class="kaart stap"><div class="stap-kop"><span class="nr grad">2</span><div><h2>Wanneer?</h2><p>Kies een datum die je goed uitkomt. Weet je het nog niet? Sla dit gewoon over.</p></div></div>' +
+      '<div class="wanneer"><div class="kalender" id="kal" aria-live="polite"></div>' +
+      '<div class="wanneer-rechts"><div class="gekozen" id="gekozen">Nog geen datum gekozen</div>' +
+      '<label class="vink-rij"><input type="checkbox" id="b-flex">Mijn datum is flexibel</label>' +
+      '<div class="veld"><span class="label">Voorkeur voor dagdeel</span><div class="chips" role="radiogroup" aria-label="Dagdeel">' + DAGDEEL.map(function (d) {
+        return '<label class="chip"><input type="radio" name="dagdeel" value="' + d + '"' + (d === 'geen voorkeur' ? ' checked' : '') + '><span>' + d.charAt(0).toUpperCase() + d.slice(1) + '</span></label>';
+      }).join('') + '</div></div></div></div></section>' +
+      '<section class="kaart stap"><div class="stap-kop"><span class="nr grad">3</span><div><h2>Waar?</h2><p>Wij houden van mooie locaties, het liefst buiten. Binnen kan natuurlijk ook.</p></div></div>' +
+      '<div class="veld"><label for="b-loc">Locatie of plaats</label><input id="b-loc" placeholder="Bijv. Kinderdijk, je bedrijf in Rotterdam…" autocomplete="off"></div>' +
+      '<label class="vink-rij"><input type="checkbox" id="b-mee" checked>LUX mag meedenken over een mooie locatie</label></section>' +
+      '<section class="kaart stap"><div class="stap-kop"><span class="nr grad">4</span><div><h2>Over jou</h2><p>Zodat we je een voorstel kunnen sturen.</p></div></div>' +
+      '<div class="velden2"><div class="veld"><label for="b-naam">Naam *</label><input id="b-naam" autocomplete="name" required></div>' +
+      '<div class="veld"><label for="b-mail">E-mailadres *</label><input id="b-mail" type="email" inputmode="email" autocomplete="email" required></div>' +
+      '<div class="veld"><label for="b-tel">Telefoon <span style="font-weight:500;color:#8E849A">(optioneel)</span></label><input id="b-tel" type="tel" inputmode="tel" autocomplete="tel"></div></div>' +
+      '<div class="veld"><label for="b-wens">Vertel iets over je idee</label><textarea id="b-wens" rows="5" placeholder="Waar is het voor? Welke sfeer zoek je? Hoeveel personen?"></textarea></div>' +
+      '<div class="potje" aria-hidden="true"><label>Website<input id="b-web" tabindex="-1" autocomplete="off"></label></div></section>' +
+      '<p class="melding" id="b-fout" role="alert" hidden></p>' +
+      '<div class="boek-onder"><button type="submit" class="btn btn-grad btn-groot">Aanvraag versturen</button><span class="sub" style="font-size:13px">Door te versturen ga je akkoord met onze <a href="privacy.html">privacyverklaring</a>.</span></div>' +
+      '</form></main>');
+    tekenKalender();
+    api('bezet').then(function (j) { B.bezet = j.datums || []; tekenKalender(); }, function () {});
+    $('#b-flex').onchange = function () { B.flex = this.checked; };
+    $('#boek').addEventListener('change', function () { $('#b-fout').hidden = true; });
+    $('#boek').addEventListener('submit', verstuurBoeking);
+  }
+  function tekenKalender() {
+    var kal = $('#kal'); if (!kal) return;
+    var m = B.maand, vandaag = iso(new Date()), nu = new Date(); nu = new Date(nu.getFullYear(), nu.getMonth(), 1);
+    var eerste = (m.getDay() + 6) % 7, dagen = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+    var titel = m.toLocaleDateString('nl-NL', { month: 'long', year: 'numeric' });
+    var h = '<div class="kal-kop"><button type="button" class="icon-btn" data-kal="-1" aria-label="Vorige maand"' + (m <= nu ? ' disabled' : '') + '>' + I.links + '</button><b>' + titel.charAt(0).toUpperCase() + titel.slice(1) + '</b><button type="button" class="icon-btn" data-kal="1" aria-label="Volgende maand">' + I.rechts + '</button></div>' +
+      '<div class="kal-grid" role="grid">' + ['ma', 'di', 'wo', 'do', 'vr', 'za', 'zo'].map(function (d) { return '<span class="kal-dag" role="columnheader">' + d + '</span>'; }).join('');
+    for (var i = 0; i < eerste; i++) h += '<span></span>';
+    for (var d = 1; d <= dagen; d++) {
+      var s = iso(new Date(m.getFullYear(), m.getMonth(), d)), voorbij = s < vandaag, vol = B.bezet.indexOf(s) >= 0;
+      h += '<button type="button" class="kal-d' + (s === B.datum ? ' gekozen-d' : '') + (vol ? ' vol' : '') + (s === vandaag ? ' vandaag' : '') + '" data-dag="' + s + '"' + (voorbij || vol ? ' disabled' : '') +
+        ' aria-label="' + langeDatum(s) + (vol ? ', al volgeboekt' : '') + '" aria-pressed="' + (s === B.datum) + '">' + d + '</button>';
+    }
+    kal.innerHTML = h + '</div><div class="kal-legenda"><span><i class="bol vol"></i>Al volgeboekt</span><span><i class="bol grad"></i>Jouw keuze</span></div>';
+    $$('[data-kal]', kal).forEach(function (b) { b.onclick = function () { B.maand = new Date(m.getFullYear(), m.getMonth() + Number(b.dataset.kal), 1); tekenKalender(); }; });
+    $$('[data-dag]', kal).forEach(function (b) { b.onclick = function () { B.datum = B.datum === b.dataset.dag ? null : b.dataset.dag; tekenKalender(); var k = $('[data-dag="' + b.dataset.dag + '"]'); if (k) k.focus(); }; });
+    var g = $('#gekozen'); if (g) g.innerHTML = B.datum ? '<span style="color:#B3A9BD;font-size:13px;font-weight:600">Gekozen datum</span><b>' + esc(langeDatum(B.datum)) + '</b>' : 'Nog geen datum gekozen';
+  }
+  function verstuurBoeking(e) {
+    e.preventDefault();
+    var f = $('#b-fout'), soorten = $$('input[name=soort]:checked').map(function (x) { return x.value; });
+    var naam = $('#b-naam').value.trim(), mail = $('#b-mail').value.trim();
+    function stop(t, el) { f.hidden = false; f.textContent = t; if (el) { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }
+    if (!soorten.length) return stop('Kies wat voor shoot je wilt (stap 1).', $('input[name=soort]'));
+    if (!naam) return stop('Vul je naam in.', $('#b-naam'));
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return stop('Vul een geldig e-mailadres in.', $('#b-mail'));
+    f.hidden = true;
+    var loc = $('#b-loc').value.trim(), mee = $('#b-mee').checked;
+    var knopje = $('#boek button[type=submit]'); knopje.disabled = true; knopje.textContent = 'Versturen…';
+    api('aanvraag_doen', {
+      soorten: soorten, datum: B.datum, datum_flexibel: B.flex, dagdeel: ($('input[name=dagdeel]:checked') || {}).value,
+      locatie: loc ? loc + (mee ? ' (LUX mag meedenken)' : '') : (mee ? '' : ''), naam: naam, email: mail,
+      telefoon: $('#b-tel').value.trim(), wens: $('#b-wens').value.trim(), website: $('#b-web').value
+    }).then(function (j) {
+      scherm(pubKop() + '<main class="in boek"><div class="kaart bedankt"><span class="vink grad">' + I.vink + '</span>' +
+        '<h1 class="titel" style="font-size:clamp(28px,4vw,40px)">Aanvraag verstuurd!</h1>' +
+        '<p class="sub">Bedankt, ' + esc(voornaam(naam)) + '. We hebben een bevestiging gestuurd naar <b style="color:#F7F3FA">' + esc(mail) + '</b>. Binnen 24 uur hoor je van ons met een voorstel en prijs.</p>' +
+        '<div class="knoppen" style="justify-content:center">' + (j.volg ? '<a class="btn btn-grad" href="#/volg/' + esc(j.volg) + '">Volg je aanvraag</a>' : '') + '<a class="btn btn-ghost" href="https://lux-media.nl">Terug naar lux-media.nl</a></div></div></main>');
+    }, function (er) { knopje.disabled = false; knopje.textContent = 'Aanvraag versturen'; stop(er.message); });
+  }
+
+  function volgScherm(code) {
+    scherm(pubKop() + '<main>' + laden() + '</main>');
+    api('volg', { code: code }).then(function (j) { tekenVolg(code, j.aanvraag); }, function (e) {
+      scherm(pubKop() + '<main class="in boek"><div class="kaart bedankt"><h1 class="titel" style="font-size:32px">Aanvraag niet gevonden</h1><p class="sub">' + esc(e.message) + '</p><div class="knoppen" style="justify-content:center"><a class="btn btn-grad" href="#/boeken">Shoot boeken</a></div></div></main>');
+    });
+  }
+  function tekenVolg(code, a) {
+    var idx = STATUS.map(function (s) { return s[0]; }).indexOf(a.status);
+    var afgewezen = a.status === 'afgewezen', voorstel = a.status === 'voorstel';
+    if (voorstel) idx = 0;
+    var allesKlaar = a.status === 'klaar';
+    var tijdlijn = afgewezen ? '' : '<ol class="tijdlijn">' + STATUS.map(function (s, i) {
+      var st = i < idx || allesKlaar ? 'klaar' : i === idx ? 'nu' : '';
+      return '<li class="' + st + '"><span class="punt">' + (i < idx ? I.vink.replace(/width="30" height="30"/, 'width="14" height="14"') : '') + '</span><div><b>' + s[1] + '</b>' + (i === idx && !voorstel ? '<p>' + s[2] + '</p>' : '') + '</div></li>';
+    }).join('') + '</ol>';
+    var datumTekst = a.geplande_datum && a.status !== 'aangevraagd' && !voorstel ? langeDatum(a.geplande_datum) : a.datum ? langeDatum(a.datum) + (a.datum_flexibel ? ' (flexibel)' : '') : 'Nog geen voorkeur';
+    scherm(pubKop() + '<main class="in boek">' +
+      '<div class="boek-kop"><span class="grad-text eyebrow">JE AANVRAAG</span><h1 class="titel">Hoi ' + esc(a.naam) + '</h1>' +
+      '<p class="sub">Hier zie je hoe het met je shoot staat. Bewaar deze link, of open hem via de mail die we je stuurden.</p></div>' +
+      (voorstel ? '<div class="kaart voorstel"><span class="pil uitgenodigd" style="align-self:flex-start">Nieuw voorstel</span><h2>Op je gewenste datum lukt het helaas niet. Past deze datum?</h2>' +
+        '<p class="groot-datum grad-text">' + esc(langeDatum(a.geplande_datum)) + '</p>' + (a.bericht ? '<p class="bericht">' + esc(a.bericht) + '</p>' : '') +
+        '<div class="knoppen"><button type="button" class="btn btn-grad" id="v-ja">Ja, dat komt goed uit</button><button type="button" class="btn btn-ghost" id="v-nee">Past niet</button></div>' +
+        '<div id="v-nee-vak" hidden class="veld"><label for="v-opm">Wanneer kan het wel?</label><textarea id="v-opm" rows="3" placeholder="Bijv. liever in het weekend, of na 15 november"></textarea><button type="button" class="btn btn-ghost btn-klein" id="v-stuur" style="align-self:flex-start">Versturen</button></div></div>' : '') +
+      (afgewezen ? '<div class="kaart voorstel"><h2>Helaas lukt deze shoot niet</h2><p class="sub">' + esc(a.bericht || 'Bedankt voor je aanvraag. Helaas kunnen we deze shoot niet voor je doen.') + '</p><div class="knoppen"><a class="btn btn-ghost" href="#/boeken">Nieuwe aanvraag</a></div></div>' : '') +
+      '<div class="volg-grid">' + (afgewezen ? '' : '<div class="kaart" style="padding:26px">' + tijdlijn + '</div>') +
+      '<div class="kaart volg-info"><h2 class="sectie" style="font-size:20px">Details</h2><dl>' +
+      '<dt>Wat</dt><dd><span class="soort-pillen">' + (a.soorten || []).map(function (s) { return SOORT[s] ? '<span>' + icoon(s, 16) + SOORT[s].t + '</span>' : ''; }).join('') + '</span></dd>' +
+      '<dt>' + (a.status === 'aangevraagd' || voorstel ? 'Gewenste datum' : 'Datum') + '</dt><dd>' + esc(datumTekst) + (a.dagdeel && a.dagdeel !== 'geen voorkeur' ? ' · ' + esc(a.dagdeel) : '') + '</dd>' +
+      '<dt>Locatie</dt><dd>' + esc(a.locatie || 'LUX denkt mee') + '</dd>' +
+      '<dt>Aangevraagd</dt><dd>' + esc(datum(a.aangemaakt)) + '</dd></dl>' +
+      (a.bericht && !voorstel && !afgewezen ? '<p class="bericht"><b>Bericht van LUX</b><br>' + esc(a.bericht) + '</p>' : '') +
+      (a.heeft_account ? '<div class="portaal-tip"><b>' + (a.status === 'klaar' ? 'Je beelden staan klaar!' : 'Je portaal staat klaar') + '</b><span>' + (a.status === 'klaar' ? 'Log in met je e-mailadres om ze te bekijken en te downloaden.' : 'Hier komen straks je foto’s en video’s. Inloggen doe je met je e-mailadres.') + '</span><a class="btn btn-grad btn-klein" href="#/">' + (a.status === 'klaar' ? 'Bekijk je beelden' : 'Naar je portaal') + '</a></div>' : '') +
+      '<p class="sub" style="font-size:13px">Vragen? Mail <a href="mailto:thomasdeekman@lux-media.nl">thomasdeekman@lux-media.nl</a></p></div></div></main>');
+    if (voorstel) {
+      $('#v-ja').onclick = function () { this.disabled = true; api('volg_reactie', { code: code, akkoord: true }).then(function (j) { toast('Top! We bevestigen je shoot zo snel mogelijk.'); tekenVolg(code, j.aanvraag); }, function (er) { toast(er.message); }); };
+      $('#v-nee').onclick = function () { $('#v-nee-vak').hidden = false; $('#v-opm').focus(); };
+      $('#v-stuur').onclick = function () { api('volg_reactie', { code: code, akkoord: false, opmerking: $('#v-opm').value }).then(function (j) { toast('Bedankt, we komen met een nieuw voorstel.'); tekenVolg(code, j.aanvraag); }, function (er) { toast(er.message); }); };
+    }
+  }
+
+  /* ---------- beheer: aanvragen ---------- */
+  var AANVR = [], AFILTER = 'open';
+  var STATUS_NAAM = { aangevraagd: 'Nieuw', voorstel: 'Voorstel gestuurd', bevestigd: 'Bevestigd', geschoten: 'Geschoten', bewerking: 'In bewerking', klaar: 'Klaar', afgewezen: 'Afgewezen' };
+  function beheerTabs(actief, nieuw) {
+    return '<nav class="tabs" aria-label="Beheer"><a href="#/beheer" class="' + (actief === 'klanten' ? 'actief' : '') + '"' + (actief === 'klanten' ? ' aria-current="page"' : '') + '>Klanten</a>' +
+      '<a href="#/beheer/aanvragen" class="' + (actief === 'aanvragen' ? 'actief' : '') + '"' + (actief === 'aanvragen' ? ' aria-current="page"' : '') + '>Aanvragen' + (nieuw ? ' <span class="teller grad">' + nieuw + '</span>' : '') + '</a></nav>';
+  }
+  function aanvraagPil(s) { return '<span class="pil st-' + s + '">' + STATUS_NAAM[s] + '</span>'; }
+  function aanvragenScherm() {
+    scherm(kop() + '<main>' + laden() + '</main>');
+    api('aanvragen').then(function (j) { AANVR = j.aanvragen; tekenAanvragen(); }, function (e) { scherm(kop() + '<main>' + fout(e) + '</main>'); });
+  }
+  function tekenAanvragen() {
+    var groep = { open: ['aangevraagd', 'voorstel'], gepland: ['bevestigd', 'geschoten', 'bewerking'], af: ['klaar', 'afgewezen'], alles: null };
+    var lijst = AANVR.filter(function (a) { return !groep[AFILTER] || groep[AFILTER].indexOf(a.status) >= 0; });
+    var tel = function (g) { return AANVR.filter(function (a) { return !groep[g] || groep[g].indexOf(a.status) >= 0; }).length; };
+    var nieuw = AANVR.filter(function (a) { return a.status === 'aangevraagd'; }).length;
+    scherm(kop() + '<main class="in" style="gap:28px">' + beheerTabs('aanvragen', nieuw) +
+      '<div class="rij"><div style="display:flex;flex-direction:column;gap:8px"><h1 class="titel">Aanvragen</h1><p class="sub">Shoots die via <a href="#/boeken">app.lux-media.nl/boeken</a> zijn aangevraagd. Bevestig je er een, dan wordt de klant en een leeg shoot-album automatisch aangemaakt.</p></div>' +
+      '<button type="button" class="btn btn-ghost btn-klein" data-actie="boeklink">Link kopiëren</button></div>' +
+      '<div class="chips" role="tablist" aria-label="Filter">' + [['open', 'Open'], ['gepland', 'Gepland'], ['af', 'Afgerond'], ['alles', 'Alles']].map(function (f) {
+        return '<button type="button" role="tab" class="chip-knop' + (AFILTER === f[0] ? ' actief' : '') + '" aria-selected="' + (AFILTER === f[0]) + '" data-filter="' + f[0] + '">' + f[1] + ' <span>' + tel(f[0]) + '</span></button>';
+      }).join('') + '</div>' +
+      (lijst.length ? '<div class="aanvragen">' + lijst.map(function (a) {
+        var d = a.geplande_datum || a.datum;
+        return '<button type="button" class="kaart aanvraag" data-aanvraag="' + esc(a.id) + '"><span class="aanvraag-boven">' + aanvraagPil(a.status) + '<span class="wanneer-k">' + esc(datum(a.aangemaakt)) + '</span></span>' +
+          '<b class="aanvraag-naam">' + esc(a.naam) + '</b><span class="soort-pillen">' + (a.soorten || []).map(function (s) { return SOORT[s] ? '<span>' + icoon(s, 15) + SOORT[s].t + '</span>' : ''; }).join('') + '</span>' +
+          '<span class="aanvraag-info"><span>' + (d ? esc(langeDatum(d)) + (!a.geplande_datum && a.datum_flexibel ? ' (flexibel)' : '') : 'Geen datum') + '</span><span>' + esc(a.locatie || 'Locatie: LUX denkt mee') + '</span></span></button>';
+      }).join('') + '</div>' : '<div class="leeg">' + (AFILTER === 'open' ? 'Geen open aanvragen. Deel de link <b>app.lux-media.nl/boeken</b> om aanvragen binnen te krijgen.' : 'Niets in deze lijst.') + '</div>') +
+      '</main>');
+  }
+  function aanvraagVenster(id) {
+    var a = AANVR.filter(function (x) { return x.id === id; })[0]; if (!a) return;
+    var ov = document.createElement('div');
+    ov.className = 'overlay'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'av-titel');
+    var opties = Object.keys(STATUS_NAAM).map(function (s) { return '<option value="' + s + '"' + (s === a.status ? ' selected' : '') + '>' + STATUS_NAAM[s] + '</option>'; }).join('');
+    ov.innerHTML = '<form class="kaart modal in" novalidate style="max-width:640px"><button type="button" class="icon-btn sluit" aria-label="Sluiten" data-n="sluit">' + I.x + '</button>' +
+      '<div style="display:flex;flex-direction:column;gap:8px">' + aanvraagPil(a.status) + '<h2 id="av-titel">' + esc(a.naam) + '</h2></div>' +
+      '<dl class="av-dl"><dt>E-mail</dt><dd><a href="mailto:' + esc(a.email) + '">' + esc(a.email) + '</a></dd>' +
+      '<dt>Telefoon</dt><dd>' + (a.telefoon ? '<a href="tel:' + esc(a.telefoon) + '">' + esc(a.telefoon) + '</a>' : '—') + '</dd>' +
+      '<dt>Wat</dt><dd><span class="soort-pillen">' + (a.soorten || []).map(function (s) { return SOORT[s] ? '<span>' + icoon(s, 15) + SOORT[s].t + '</span>' : ''; }).join('') + '</span></dd>' +
+      '<dt>Gewenste datum</dt><dd>' + (a.datum ? esc(langeDatum(a.datum)) + (a.datum_flexibel ? ' (flexibel)' : '') : 'Geen voorkeur') + (a.dagdeel && a.dagdeel !== 'geen voorkeur' ? ' · ' + esc(a.dagdeel) : '') + '</dd>' +
+      '<dt>Locatie</dt><dd>' + esc(a.locatie || 'LUX mag meedenken') + '</dd>' +
+      '<dt>Aangevraagd</dt><dd>' + esc(datum(a.aangemaakt)) + '</dd></dl>' +
+      (a.wens ? '<p class="bericht" style="white-space:pre-wrap">' + esc(a.wens) + '</p>' : '') +
+      '<div class="knoppen">' + (a.album_id ? '<a class="btn btn-ghost btn-klein" href="#/album/' + esc(a.album_id) + '">Shoot-album openen</a>' : '') + (a.klant_id ? '<a class="btn btn-ghost btn-klein" href="#/beheer/klant/' + esc(a.klant_id) + '">Klant openen</a>' : '') +
+      '<a class="btn btn-ghost btn-klein" href="#/volg/' + esc(a.volg_code) + '" target="_blank" rel="noopener">Bekijk als klant</a></div>' +
+      '<hr style="border:0;border-top:1px solid #2B2433;margin:0">' +
+      '<div class="velden2"><div class="veld"><label for="av-st">Status</label><select id="av-st">' + opties + '</select></div>' +
+      '<div class="veld"><label for="av-dat">Datum shoot <span style="font-weight:500;color:#8E849A">(vastleggen of voorstellen)</span></label><input id="av-dat" type="date" value="' + esc(a.geplande_datum || a.datum || '') + '"></div></div>' +
+      '<div class="veld"><label for="av-ber">Bericht aan de klant <span style="font-weight:500;color:#8E849A">(komt in de mail en op de statuspagina)</span></label><textarea id="av-ber" rows="4" placeholder="Bijv. de prijs, wat je meeneemt of het voorstel voor de locatie">' + esc(a.bericht || '') + '</textarea></div>' +
+      '<p class="sub" id="av-uitleg" style="font-size:13px"></p>' +
+      '<label class="vink-rij"><input type="checkbox" id="av-mail" checked>Klant mailen over de nieuwe status</label>' +
+      '<p class="melding" id="av-fout" role="alert" hidden></p>' +
+      '<div class="knoppen"><button type="submit" class="btn btn-grad">Opslaan</button><button type="button" class="btn btn-ghost" data-n="sluit">Annuleren</button><button type="button" class="btn btn-rood btn-klein" id="av-weg" style="margin-left:auto">Verwijderen</button></div></form>';
+    document.body.appendChild(ov);
+    var uitleg = { aangevraagd: 'De aanvraag staat open.', voorstel: 'De klant krijgt de datum hierboven als voorstel en kan met één klik akkoord gaan.', bevestigd: a.klant_id ? 'De shoot staat vast.' : 'Er wordt automatisch een klantaccount (10 GB) en een leeg shoot-album aangemaakt. De klant krijgt een bevestiging met inloginfo.', geschoten: 'De klant krijgt een bedankmail.', bewerking: 'De klant ziet dat je met de beelden bezig bent.', klaar: 'Het shoot-album wordt zichtbaar voor de klant en hij krijgt de mail “je foto’s staan klaar”. Upload eerst de beelden!', afgewezen: 'De klant krijgt een nette afwijzing, met je bericht erbij.' };
+    function zetUitleg() { $('#av-uitleg', ov).textContent = uitleg[$('#av-st', ov).value] || ''; }
+    $('#av-st', ov).onchange = zetUitleg; zetUitleg();
+    $$('[data-n=sluit]', ov).forEach(function (b) { b.onclick = function () { ov.remove(); }; });
+    $('#av-weg', ov).onclick = function () {
+      if (!confirm('Aanvraag van ' + a.naam + ' verwijderen? Een klantaccount of album dat al is aangemaakt blijft bestaan.')) return;
+      api('aanvraag_verwijderen', { id: a.id }).then(function () { ov.remove(); toast('Aanvraag verwijderd.'); aanvragenScherm(); }, function (er) { toast(er.message); });
+    };
+    $('form', ov).addEventListener('submit', function (e) {
+      e.preventDefault();
+      var b = $('button[type=submit]', ov); b.disabled = true; b.textContent = 'Opslaan…';
+      api('aanvraag_bijwerken', { id: a.id, status: $('#av-st', ov).value, geplande_datum: $('#av-dat', ov).value || null, bericht: $('#av-ber', ov).value, mailen: $('#av-mail', ov).checked })
+        .then(function () { ov.remove(); toast('Opgeslagen.'); aanvragenScherm(); },
+          function (er) { b.disabled = false; b.textContent = 'Opslaan'; var f = $('#av-fout', ov); f.hidden = false; f.textContent = er.message; });
+    });
+  }
+
   /* ---------- klikken ---------- */
   document.addEventListener('click', function (e) {
-    var t = e.target.closest ? e.target.closest('[data-actie],[data-album],[data-foto],[data-lb]') : null;
+    var t = e.target.closest ? e.target.closest('[data-actie],[data-album],[data-foto],[data-lb],[data-aanvraag],[data-filter]') : null;
     if (!t) return;
     if (t.dataset.album) { location.hash = '#/album/' + t.dataset.album; return; }
+    if (t.dataset.aanvraag) { aanvraagVenster(t.dataset.aanvraag); return; }
+    if (t.dataset.filter) { AFILTER = t.dataset.filter; tekenAanvragen(); return; }
     if (t.dataset.foto) { lichtbak(Number(t.dataset.foto)); return; }
     if (t.dataset.lb) {
       var f = HUIDIG.fotos[lbIndex], n = HUIDIG.fotos.length;
@@ -488,6 +706,7 @@
       api('shoot_klaar', { album_id: HUIDIG.album.id, mailen: mailen }).then(function () { toast(mailen ? 'Klaargezet en gemaild.' : 'Klaargezet.'); albumScherm(HUIDIG.album.id); }, function (er) { toast(er.message); });
     }
     if (a === 'klant-nieuw') nieuweKlant();
+    if (a === 'boeklink') { var l = location.origin + '/boeken'; (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(function () { toast('Gekopieerd: ' + l); }, function () { prompt('Kopieer deze link:', l); }); }
     if (a === 'uitnodigen') api('klant_uitnodigen', { klant_id: HUIDIG_KLANT }).then(function () { toast('Uitnodiging verstuurd.'); }, function (er) { toast(er.message); });
     if (a === 'pauze') {
       var info = JSON.parse($app.dataset.klant || '{}');
@@ -513,12 +732,16 @@
   /* ---------- router ---------- */
   function render() {
     sluitLichtbak();
-    if (!T.token) { loginScherm(); return; }
+    $$('.overlay').forEach(function (o) { o.remove(); });
     var h = location.hash.replace(/^#/, '') || '/';
     var m;
+    if (h === '/boeken') return boekScherm();
+    if ((m = h.match(/^\/volg\/([A-Za-z0-9_-]{20,64})$/))) return volgScherm(m[1]);
+    if (!T.token) { loginScherm(); return; }
     if ((m = h.match(/^\/album\/([0-9a-f-]{36})$/i))) return albumScherm(m[1]);
     if (T.rol === 'beheer') {
       if ((m = h.match(/^\/beheer\/klant\/([0-9a-f-]{36})$/i))) return klantScherm(m[1]);
+      if (h === '/beheer/aanvragen') return aanvragenScherm();
       return beheerScherm();
     }
     return home();

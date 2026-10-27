@@ -1,6 +1,6 @@
 /* LUX Klantportaal — service worker: app werkt als echte app en laadt snel.
    Alleen de app-bestanden worden bewaard; foto's en inloggegevens nooit. */
-const VERSIE = 'lux-portaal-v1';
+const VERSIE = 'lux-portaal-v2';
 const BESTANDEN = ['/', '/index.html', '/app.css', '/app.js', '/installeer.js', '/config.js', '/privacy.html', '/manifest.webmanifest',
   '/favicon.svg', '/favicon-32.png', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSIE).then((c) => c.addAll(BESTANDEN)).then(() => self.skipWaiting())); });

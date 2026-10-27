@@ -10,7 +10,10 @@
   var iosSafari = ios && /safari/i.test(ua) && !/crios|fxios|edgios|opios/i.test(ua);
   var uitgesteld = null, el = null;
 
-  function weggeklikt() { try { var t = Number(localStorage.getItem('lux_installeer_weg') || 0); return Date.now() - t < 14 * 864e5; } catch (e) { return false; } }
+  function publiek() { return /^#\/(boeken|volg)/.test(location.hash); }
+  function weggeklikt() { if (publiek()) return true;
+    return oudWeg(); }
+  function oudWeg() { try { var t = Number(localStorage.getItem('lux_installeer_weg') || 0); return Date.now() - t < 14 * 864e5; } catch (e) { return false; } }
   function weg() { try { localStorage.setItem('lux_installeer_weg', String(Date.now())); } catch (e) {} sluit(); }
   function sluit() { if (el) { el.remove(); el = null; } }
 
@@ -28,8 +31,8 @@
     return el;
   }
 
-  function android() {
-    if (!uitgesteld || weggeklikt()) return;
+  function android(forceer) {
+    if (!uitgesteld || (!forceer && weggeklikt())) return;
     var b = toon('<div class="inst-tekst"><strong>Zet LUX op je telefoon</strong><span>Open je foto’s met één tik, net als een app.</span></div><button class="btn btn-grad" type="button" data-ja>Installeren</button>');
     b.querySelector('[data-ja]').onclick = function () {
       var p = uitgesteld; uitgesteld = null; sluit();
@@ -38,6 +41,9 @@
   }
   function iphone() {
     if (weggeklikt()) return;
+    toonIphone();
+  }
+  function toonIphone() {
     toon('<div class="inst-tekst"><strong>Zet LUX op je beginscherm</strong><ol class="inst-stappen"><li>' + DEEL + '<span>Tik onderin op <b>Deel</b></span></li><li>' + PLUS + '<span>Kies <b>Zet op beginscherm</b></span></li></ol></div>');
   }
 
@@ -49,7 +55,7 @@
   document.addEventListener('click', function (e) {
     var k = e.target.closest && e.target.closest('[data-installeer]'); if (!k) return;
     try { localStorage.removeItem('lux_installeer_weg'); } catch (x) {}
-    if (uitgesteld) android(); else if (ios) iphone();
+    if (uitgesteld) android(true); else if (ios) toonIphone();
   });
   function knopTonen() { var k = document.getElementById('inst-link'); if (k && (uitgesteld || ios)) { k.hidden = false; k.previousSibling.textContent = ' · '; } }
   window.addEventListener('beforeinstallprompt', knopTonen);
