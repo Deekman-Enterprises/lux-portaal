@@ -30,7 +30,8 @@
   var LOGO = '<svg aria-hidden="true" width="26" height="34" viewBox="0 0 120 160"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5E5B"/><stop offset=".5" stop-color="#C957B0"/><stop offset="1" stop-color="#8F55FF"/></linearGradient></defs><path fill="url(#lg)" fill-rule="evenodd" d="M10 30 H70 L80 8 H105 a5 5 0 0 1 5 5 V57 A38 38 0 0 0 110 133 V150 a10 10 0 0 1 -10 10 H10 a10 10 0 0 1 -10 -10 V40 a10 10 0 0 1 10 -10 Z M16 44 h26 a3 3 0 0 1 3 3 v6 a3 3 0 0 1 -3 3 h-26 a3 3 0 0 1 -3 -3 v-6 a3 3 0 0 1 3 -3 Z"/><path d="M110 70 A25 25 0 0 0 110 120" fill="none" stroke="url(#lg)" stroke-width="9"/><circle cx="111" cy="92" r="8" fill="url(#lg)"/></svg>';
 
   function toast(t) {
-    var el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.textContent = t;
+    $$('.toast').forEach(function (x) { x.remove(); });
+    var el = document.createElement('div'); el.className = 'toast'; if ($('.overlay')) el.classList.add('boven'); el.setAttribute('role', 'status'); el.textContent = t;
     document.body.appendChild(el); setTimeout(function () { el.remove(); }, 3200);
   }
   function api(actie, data) {
@@ -137,6 +138,8 @@
   function albumKaart(a, beheer) {
     var info = a.soort === 'lux' ? maand(a.aangemaakt) + ' · ' + fotos(a.aantal) : fotos(a.aantal) + (a.bytes ? ' · ' + gb(a.bytes) : '');
     var badge = beheer ? (a.klaar ? '<span class="badge grad">ZICHTBAAR</span>' : '<span class="badge grijs">NOG NIET ZICHTBAAR</span>') : (a.nieuw && a.soort === 'lux' ? '<span class="badge grad">NIEUW</span>' : '');
+    var extra = (a.ongelezen ? '<span class="badge-r bericht-b">' + a.ongelezen + ' nieuw bericht' + (a.ongelezen > 1 ? 'en' : '') + '</span>' : '') + (beheer && a.favorieten ? '<span class="badge-r">♥ ' + a.favorieten + (a.keuze_verstuurd ? ' · doorgestuurd' : '') + '</span>' : '');
+    badge += extra ? '<span class="badges-r">' + extra + '</span>' : '';
     return '<button type="button" class="album" data-album="' + esc(a.id) + '"><span class="cover">' + badge +
       (a.cover ? '<img src="' + esc(a.cover) + '" alt="" loading="lazy">' : '<span style="color:#8E849A">' + I.beeld + '</span>') +
       '</span><span style="display:flex;flex-direction:column;gap:4px"><span class="naam">' + esc(a.titel) + '</span><span class="info">' + esc(info) + '</span></span></button>';
@@ -157,6 +160,7 @@
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><b style="font-size:15px">Opslag</b><span style="color:#B3A9BD;font-size:14px"><b style="color:#F7F3FA">' + gb(j.gebruikt) + '</b> van ' + gb(j.quota) + '</span></div>' +
         '<div class="balk" role="img" aria-label="' + p + ' procent van je opslag gebruikt"><span style="width:' + p + '%"></span></div>' +
         '<span style="color:#B3A9BD;font-size:13px;line-height:1.5">' + (p >= 90 ? 'Je opslag is bijna vol. Vraag LUX om meer ruimte.' : 'Shoots van LUX tellen niet mee voor je ruimte.') + '</span></div></div>' +
+        (j.review ? reviewKaart(j.review) : j.heeftReview ? refKaart() : '') +
         '<section style="display:flex;flex-direction:column;gap:18px"><div class="rij"><h2 class="sectie">Van LUX Media</h2><span class="sub" style="font-size:14px">Shoots die wij voor je hebben klaargezet · <a href="#/boeken">Nieuwe shoot boeken</a></span></div>' +
         (lux.length ? '<div class="albums">' + lux.map(function (a) { return albumKaart(a); }).join('') + '</div>' : '<div class="leeg">Hier verschijnen de foto’s van je shoots met LUX Media.</div>') + '</section>' +
         '<section style="display:flex;flex-direction:column;gap:18px"><div class="rij"><h2 class="sectie">Mijn albums</h2><button type="button" class="btn btn-ghost btn-klein" data-actie="nieuw-album">' + I.plus + 'Nieuw album</button></div>' +
@@ -164,38 +168,119 @@
         '<button type="button" class="album nieuw-album" data-actie="upload"><span class="cover"><span style="display:flex;flex-direction:column;align-items:center;gap:10px;color:#B3A9BD;font-weight:600;font-size:15px"><span class="grad rondje" style="width:52px;height:52px">' + I.up.replace('currentColor', '#0D0A12') + '</span>Foto’s toevoegen</span></span><span style="display:flex;flex-direction:column;gap:4px"><span class="naam">Uploaden</span><span class="info">Vanaf je computer of telefoon</span></span></button>' +
         '</div></section></main>' +
         '<button type="button" class="btn btn-grad fab" data-actie="upload">' + I.up + 'Foto’s uploaden</button>');
+      if (j.review) koppelReview(j.review);
+      vulRef();
     }, function (e) { scherm(kop() + '<main>' + fout(e) + '</main>'); });
   }
 
   /* ---------- album ---------- */
-  var HUIDIG = null;
+  var HUIDIG = null, FILTER = 'alles';
+  var GEBRUIK = {
+    prive: ['Alleen privé', 'Voor jezelf, familie en vrienden. Niet op social media of voor je bedrijf.'],
+    online: ['Privé & eigen social media', 'Ook op je eigen social media, graag met vermelding van @lux_media.nl. Niet voor reclame.'],
+    commercieel: ['Commercieel gebruik toegestaan', 'Ook voor je bedrijf: website, advertenties, social media en drukwerk.']
+  };
+  var HART = function (vol) { return '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="' + (vol ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-9.3-9.2C1.6 7.6 3.6 4.5 7 4.5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.4 3.1 4.3 6.3C19.5 15.4 12 20 12 20z"/></svg>'; };
+  var BALLON = '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>';
+  var DEEL = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>';
+  var FORMAAT_I = '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="3" y="6" width="9" height="12" rx="1.5"/><rect x="14" y="3" width="7" height="18" rx="1.5"/></svg>';
+  function gebruikVan(f) { return f.gebruik || (HUIDIG && HUIDIG.album.gebruik) || 'online'; }
+  function isBeeld(f) { return !/^video\//.test(f.type) && (f.groot || /^image\/(jpe?g|png|webp|gif|avif)/.test(f.type)); }
   function albumScherm(id) {
     scherm(kop() + '<main>' + laden() + '</main>');
     api('album', { album_id: id }).then(function (j) {
-      HUIDIG = j;
-      var a = j.album, beheer = T.rol === 'beheer';
-      var totaal = j.fotos.reduce(function (t, f) { return t + f.grootte; }, 0);
-      var label = a.soort === 'lux' ? 'VAN LUX MEDIA' : 'MIJN ALBUM';
-      var terug = beheer ? '#/beheer/klant/' + encodeURIComponent(HUIDIG_KLANT || '') : '#/';
-      scherm(kop() + '<main class="in" style="gap:26px">' +
-        '<div class="rij"><div style="display:flex;flex-direction:column;gap:8px">' +
-        '<a class="terug" href="' + terug + '">' + I.links + (beheer ? 'Terug naar klant' : 'Terug naar overzicht') + '</a>' +
-        '<span class="grad-text" style="font-weight:700;font-size:12px;letter-spacing:.25em;align-self:flex-start">' + label + '</span>' +
-        '<h1 class="titel">' + esc(a.titel) + '</h1><span class="sub" style="font-size:15px">' + fotos(j.fotos.length) + (totaal ? ' · ' + gb(totaal) : '') + ' · originele kwaliteit</span>' +
-        (beheer ? '<span class="sub" style="font-size:14px">' + (a.klaar ? 'Zichtbaar voor de klant.' : 'Nog niet zichtbaar voor de klant. Upload de foto’s en zet de shoot daarna klaar.') + '</span>' : '') +
-        '</div><div class="knoppen">' +
-        (j.magBewerken ? '<button type="button" class="btn btn-ghost" data-actie="upload-hier">' + I.up + 'Uploaden</button>' : '') +
-        (j.fotos.length ? '<button type="button" class="btn btn-ghost" data-actie="alles">' + I.down + 'Alles downloaden</button>' : '') +
-        (beheer && !a.klaar ? '<button type="button" class="btn btn-grad" data-actie="shoot-klaar">Zet klaar &amp; mail klant</button>' : '') +
-        (j.magBewerken ? '<button type="button" class="btn btn-ghost btn-klein" data-actie="hernoem">Naam wijzigen</button><button type="button" class="btn btn-rood btn-klein" data-actie="album-weg">Album verwijderen</button>' : '') +
-        '</div></div>' +
-        (j.fotos.length ? '<div class="fotos">' + j.fotos.map(function (f, i) {
-          var video = /^video\//.test(f.type);
-          return '<button type="button" class="foto" data-foto="' + i + '" aria-label="' + esc((video ? 'Video ' : 'Foto ') + (i + 1) + ': ' + f.naam) + '">' +
-            (f.mini ? '<img src="' + esc(f.mini) + '" alt="" loading="lazy">' : I.beeld) + (video ? '<span class="speel">' + I.speel + '</span>' : '') + '</button>';
-        }).join('') + '</div>' : '<div class="leeg">' + (j.magBewerken ? 'Dit album is nog leeg. Klik op Uploaden om foto’s toe te voegen.' : 'Dit album is nog leeg.') + '</div>') +
-        '</main>' + (T.rol === 'klant' && j.magBewerken ? '<button type="button" class="btn btn-grad fab" data-actie="upload-hier">' + I.up + 'Uploaden</button>' : ''));
+      HUIDIG = j; FILTER = 'alles';
+      if (T.rol === 'beheer' && j.album.klant_id) HUIDIG_KLANT = j.album.klant_id;
+      tekenAlbum();
+      if (j.album.soort === 'lux') laadBerichten();
     }, function (e) { scherm(kop() + '<main><a class="terug" href="#/">' + I.links + 'Terug</a>' + fout(e) + '</main>'); });
+  }
+  function tekenAlbum() {
+    var j = HUIDIG, a = j.album, beheer = T.rol === 'beheer', klant = T.rol === 'klant', lux = a.soort === 'lux';
+    var kiezen = klant && lux;
+    var totaal = j.fotos.reduce(function (t, f) { return t + f.grootte; }, 0);
+    var fav = j.fotos.filter(function (f) { return f.favoriet; }).length, fb = j.fotos.filter(function (f) { return f.feedback; }).length;
+    var label = lux ? 'VAN LUX MEDIA' : 'MIJN ALBUM';
+    var terug = beheer ? '#/beheer/klant/' + encodeURIComponent(HUIDIG_KLANT || '') : '#/';
+    var lijst = j.fotos.map(function (f, i) { return { f: f, i: i }; }).filter(function (x) { return FILTER === 'alles' || (FILTER === 'fav' && x.f.favoriet) || (FILTER === 'fb' && x.f.feedback); });
+    var g = GEBRUIK[a.gebruik || 'online'];
+    scherm(kop() + '<main class="in" style="gap:26px">' +
+      '<div class="rij"><div style="display:flex;flex-direction:column;gap:8px">' +
+      '<a class="terug" href="' + terug + '">' + I.links + (beheer ? 'Terug naar klant' : 'Terug naar overzicht') + '</a>' +
+      '<span class="grad-text" style="font-weight:700;font-size:12px;letter-spacing:.25em;align-self:flex-start">' + label + '</span>' +
+      '<h1 class="titel">' + esc(a.titel) + '</h1><span class="sub" style="font-size:15px">' + fotos(j.fotos.length) + (totaal ? ' · ' + gb(totaal) : '') + ' · originele kwaliteit</span>' +
+      (beheer ? '<span class="sub" style="font-size:14px">' + (a.klaar ? 'Zichtbaar voor de klant.' : 'Nog niet zichtbaar voor de klant. Upload de foto’s en zet de shoot daarna klaar.') + '</span>' : '') +
+      '</div><div class="knoppen">' +
+      (j.magBewerken ? '<button type="button" class="btn btn-ghost" data-actie="upload-hier">' + I.up + 'Uploaden</button>' : '') +
+      (klant && j.fotos.length ? '<button type="button" class="btn btn-ghost" data-actie="delen">' + DEEL + 'Delen</button>' : '') +
+      (j.fotos.length ? '<button type="button" class="btn btn-ghost" data-actie="alles">' + I.down + 'Alles downloaden</button>' : '') +
+      (lux ? '<button type="button" class="btn btn-ghost" data-actie="naar-chat">' + BALLON + 'Berichten</button>' : '') +
+      (beheer && !a.klaar ? '<button type="button" class="btn btn-grad" data-actie="shoot-klaar">Zet klaar &amp; mail klant</button>' : '') +
+      (j.magBewerken ? '<button type="button" class="btn btn-ghost btn-klein" data-actie="hernoem">Naam wijzigen</button><button type="button" class="btn btn-rood btn-klein" data-actie="album-weg">Album verwijderen</button>' : '') +
+      '</div></div>' +
+      (lux ? '<div class="infobalk">' +
+        '<div class="gebruik-blok"><span class="gb-icoon grad">©</span><div><b>' + (beheer ? 'Gebruiksrecht' : 'Wat mag je met deze foto’s?') + '</b>' +
+        (beheer ? '<select id="album-gebruik" aria-label="Gebruiksrecht voor deze shoot">' + Object.keys(GEBRUIK).map(function (k) { return '<option value="' + k + '"' + (k === (a.gebruik || 'online') ? ' selected' : '') + '>' + GEBRUIK[k][0] + '</option>'; }).join('') + '</select><small>Standaard voor alle foto’s; per foto aan te passen in de lichtbak.</small>'
+          : '<span>' + g[0] + '</span><small>' + g[1] + ' Bij sommige foto’s kan het anders zijn; dat zie je als je de foto opent.</small>') + '</div></div>' +
+        (kiezen ? '<div class="kies-blok"><div><b>' + HART(true) + ' ' + fav + (fav === 1 ? ' favoriet' : ' favorieten') + (fb ? ' · ' + fb + (fb === 1 ? ' opmerking' : ' opmerkingen') : '') + '</b><small>Tik op het hartje bij de foto’s die je het mooist vindt en zet opmerkingen bij een foto. Klaar? Stuur je keuze door naar LUX.</small></div>' +
+          '<button type="button" class="btn btn-grad btn-klein" data-actie="keuze"' + (fav || fb ? '' : ' disabled') + '>' + (a.keuze_verstuurd ? 'Keuze opnieuw doorsturen' : 'Keuze doorsturen') + '</button>' + (a.keuze_verstuurd ? '<small class="ok-tekst">Doorgestuurd op ' + esc(datum(a.keuze_verstuurd)) + '</small>' : '') + '</div>' : '') +
+        (beheer && (fav || fb || a.keuze_verstuurd) ? '<div class="kies-blok"><div><b>' + HART(true) + ' ' + fav + ' favorieten · ' + fb + (fb === 1 ? ' opmerking' : ' opmerkingen') + '</b><small>' + (a.keuze_verstuurd ? 'Klant stuurde de keuze door op ' + esc(datum(a.keuze_verstuurd)) + '.' : 'De klant is nog aan het kiezen.') + '</small></div></div>' : '') +
+        '</div>' : '') +
+      (lux && (fav || fb) ? '<div class="chips" role="tablist" aria-label="Filter">' + [['alles', 'Alles', j.fotos.length], ['fav', 'Favorieten', fav], ['fb', 'Met opmerking', fb]].map(function (x) {
+        return '<button type="button" role="tab" class="chip-knop' + (FILTER === x[0] ? ' actief' : '') + '" aria-selected="' + (FILTER === x[0]) + '" data-albumfilter="' + x[0] + '">' + x[1] + ' <span>' + x[2] + '</span></button>'; }).join('') + '</div>' : '') +
+      (lijst.length ? '<div class="fotos">' + lijst.map(function (x) {
+        var f = x.f, i = x.i, video = /^video\//.test(f.type);
+        return '<div class="foto-w"><button type="button" class="foto" data-foto="' + i + '" aria-label="' + esc((video ? 'Video ' : 'Foto ') + (i + 1) + ': ' + f.naam) + '">' +
+          (f.mini ? '<img src="' + esc(f.mini) + '" alt="" loading="lazy">' : I.beeld) + (video ? '<span class="speel">' + I.speel + '</span>' : '') +
+          (f.feedback ? '<span class="fb-stip" title="' + esc(f.feedback) + '">' + BALLON + '</span>' : '') + '</button>' +
+          (kiezen ? '<button type="button" class="hart' + (f.favoriet ? ' aan' : '') + '" data-hart="' + i + '" aria-pressed="' + f.favoriet + '" aria-label="Favoriet: ' + esc(f.naam) + '">' + HART(f.favoriet) + '</button>'
+            : f.favoriet ? '<span class="hart aan stil" aria-label="Favoriet van de klant">' + HART(true) + '</span>' : '') + '</div>';
+      }).join('') + '</div>' : '<div class="leeg">' + (j.fotos.length ? 'Geen foto’s in deze selectie.' : j.magBewerken ? 'Dit album is nog leeg. Klik op Uploaden om foto’s toe te voegen.' : 'Dit album is nog leeg.') + '</div>') +
+      (lux ? '<section class="kaart chat" id="chat" aria-labelledby="chat-titel"><div class="chat-kop"><h2 class="sectie" id="chat-titel" style="font-size:20px">' + (beheer ? 'Berichten met de klant' : 'Berichten met LUX') + '</h2><small>' + (beheer ? 'De klant krijgt een mail bij een nieuw bericht.' : 'Vragen of afspraken over deze shoot? Zet ze hier, dan blijft alles bij elkaar.') + '</small></div>' +
+        '<div class="chat-lijst" id="chat-lijst" aria-live="polite">' + laden() + '</div>' +
+        '<form class="chat-form" id="chat-form"><label class="sr" for="chat-in">Bericht</label><textarea id="chat-in" rows="1" placeholder="Typ een bericht…"></textarea><button type="submit" class="btn btn-grad btn-klein">Versturen</button></form></section>' : '') +
+      '</main>' + (T.rol === 'klant' && j.magBewerken ? '<button type="button" class="btn btn-grad fab" data-actie="upload-hier">' + I.up + 'Uploaden</button>' : ''));
+    var sel = $('#album-gebruik');
+    if (sel) sel.onchange = function () { var v = sel.value; api('album_gebruik', { album_id: a.id, gebruik: v }).then(function () { a.gebruik = v; toast('Gebruiksrecht opgeslagen.'); }, function (er) { toast(er.message); }); };
+    var cf = $('#chat-form');
+    if (cf) {
+      var ci = $('#chat-in');
+      ci.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); cf.requestSubmit ? cf.requestSubmit() : null; } });
+      ci.addEventListener('input', function () { ci.style.height = 'auto'; ci.style.height = Math.min(160, ci.scrollHeight) + 'px'; });
+      cf.addEventListener('submit', function (e) {
+        e.preventDefault(); var t = ci.value.trim(); if (!t) return;
+        var b = $('button', cf); b.disabled = true;
+        api('bericht_sturen', { album_id: a.id, tekst: t }).then(function (r) { ci.value = ''; ci.style.height = ''; b.disabled = false; (HUIDIG.berichten = HUIDIG.berichten || []).push(r.bericht); tekenBerichten(); }, function (er) { b.disabled = false; toast(er.message); });
+      });
+      if (HUIDIG.berichten) tekenBerichten();
+    }
+  }
+  var chatTimer = null;
+  function laadBerichten() {
+    clearTimeout(chatTimer);
+    if (!HUIDIG || HUIDIG.album.soort !== 'lux') return;
+    var id = HUIDIG.album.id;
+    api('berichten', { album_id: id }).then(function (r) {
+      if (!HUIDIG || HUIDIG.album.id !== id) return;
+      var oud = (HUIDIG.berichten || []).length; HUIDIG.berichten = r.berichten;
+      if (r.berichten.length !== oud || !$('#chat-lijst .bericht-r, #chat-lijst .chat-leeg')) tekenBerichten();
+      chatTimer = setTimeout(function () { if ($('#chat-lijst') && !document.hidden) laadBerichten(); else if ($('#chat-lijst')) chatTimer = setTimeout(laadBerichten, 20000); }, 20000);
+    }, function () {});
+  }
+  function tekenBerichten() {
+    var l = $('#chat-lijst'); if (!l) return;
+    var mij = T.rol === 'klant' ? 'klant' : 'lux', b = HUIDIG.berichten || [];
+    l.innerHTML = b.length ? b.map(function (m) {
+      return '<div class="bericht-r ' + (m.van === mij ? 'mij' : 'zij') + '"><div class="bubbel">' + esc(m.tekst).replace(/\n/g, '<br>') + '</div><small>' + (m.van === 'lux' ? 'LUX Media' : (T.rol === 'beheer' ? 'Klant' : 'Jij')) + ' · ' + esc(tijdstip(m.aangemaakt)) + '</small></div>';
+    }).join('') : '<p class="chat-leeg">Nog geen berichten. Stuur gerust een vraag' + (T.rol === 'klant' ? ', we reageren zo snel mogelijk.' : '.') + '</p>';
+    l.scrollTop = l.scrollHeight;
+  }
+  function tijdstip(d) { try { var x = new Date(d); return x.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' }) + ' ' + x.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
+  function wisselHart(i) {
+    var f = HUIDIG.fotos[i], aan = !f.favoriet; f.favoriet = aan;
+    api('foto_favoriet', { foto_id: f.id, aan: aan }).catch(function (er) { f.favoriet = !aan; toast(er.message); tekenAlbum(); });
+    if (lbEl) { var hb = $('[data-lb=hart]', lbEl); if (hb) { hb.classList.toggle('aan', aan); hb.setAttribute('aria-pressed', aan); hb.innerHTML = HART(aan) + (aan ? 'Favoriet' : 'Favoriet maken'); } }
+    var y = window.scrollY; tekenAlbum(); window.scrollTo(0, y);
   }
 
   /* ---------- lichtbak ---------- */
@@ -205,6 +290,8 @@
     var f = HUIDIG.fotos[i], n = HUIDIG.fotos.length, video = /^video\//.test(f.type);
     var bron = f.groot || f.origineel;
     var kanTonen = video || f.groot || /^image\/(jpe?g|png|gif|webp|avif)/.test(f.type);
+    var lux = HUIDIG.album.soort === 'lux', klant = T.rol === 'klant', beheer = T.rol === 'beheer', gedeeld = !!HUIDIG.gedeeld;
+    var g = gebruikVan(f);
     lbEl = document.createElement('div');
     lbEl.className = 'overlay lichtbak'; lbEl.setAttribute('role', 'dialog'); lbEl.setAttribute('aria-modal', 'true'); lbEl.setAttribute('aria-label', f.naam);
     lbEl.innerHTML = '<button type="button" class="icon-btn sluit" data-lb="sluit" aria-label="Sluiten">' + I.x + '</button>' +
@@ -212,14 +299,30 @@
       (video ? '<video class="beeld" src="' + esc(f.origineel) + '" controls playsinline' + (f.groot ? ' poster="' + esc(f.groot) + '"' : '') + '></video>'
         : kanTonen ? '<img class="beeld" src="' + esc(bron) + '" alt="' + esc(f.naam) + '">'
         : '<div class="kaart" style="padding:40px;text-align:center;color:#B3A9BD;max-width:420px">' + I.beeld + '<p>Van dit bestand (' + esc(f.naam) + ') kan geen voorbeeld worden getoond. Download het om het te bekijken.</p></div>') +
-      '<div class="balkje"><span>' + (i + 1) + ' / ' + n + ' · ' + esc(f.naam) + ' · ' + gb(f.grootte) + '</span>' +
-      '<button type="button" class="btn btn-grad btn-klein" data-lb="download">' + I.down + 'Download origineel</button>' +
-      (HUIDIG.magBewerken ? '<button type="button" class="btn btn-rood btn-klein" data-lb="weg">Verwijderen</button>' : '') + '</div>';
+      '<div class="balkje"><span>' + (i + 1) + ' / ' + n + ' · ' + esc(f.naam) + (f.grootte ? ' · ' + gb(f.grootte) : '') + '</span>' +
+      (lux && klant ? '<button type="button" class="btn btn-ghost btn-klein hart-knop' + (f.favoriet ? ' aan' : '') + '" data-lb="hart" aria-pressed="' + f.favoriet + '">' + HART(f.favoriet) + (f.favoriet ? 'Favoriet' : 'Favoriet maken') + '</button>' : '') +
+      (!gedeeld || f.download ? '<button type="button" class="btn btn-grad btn-klein" data-lb="download">' + I.down + (gedeeld ? 'Downloaden' : 'Download origineel') + '</button>' : '') +
+      (!gedeeld && isBeeld(f) ? '<button type="button" class="btn btn-ghost btn-klein" data-lb="formaat">' + FORMAAT_I + 'Social formaten</button>' : '') +
+      (HUIDIG.magBewerken ? '<button type="button" class="btn btn-rood btn-klein" data-lb="weg">Verwijderen</button>' : '') + '</div>' +
+      (lux && !gedeeld ? '<div class="lb-extra">' +
+        '<span class="gebruik-pil gb-' + g + '" title="' + esc(GEBRUIK[g][1]) + '">© ' + GEBRUIK[g][0] + '</span>' +
+        (beheer ? '<label class="sr" for="lb-gebruik">Gebruik van deze foto</label><select id="lb-gebruik" class="mini-select"><option value="">Zoals de shoot (' + GEBRUIK[HUIDIG.album.gebruik || 'online'][0] + ')</option>' + Object.keys(GEBRUIK).map(function (k) { return '<option value="' + k + '"' + (f.gebruik === k ? ' selected' : '') + '>' + GEBRUIK[k][0] + '</option>'; }).join('') + '</select>' : '') +
+        (klant ? '<form class="lb-fb" id="lb-fb"><label class="sr" for="lb-fb-in">Opmerking bij deze foto</label><input id="lb-fb-in" placeholder="Opmerking voor LUX, bijv. “iets lichter graag”" value="' + esc(f.feedback || '') + '" maxlength="1000"><button type="submit" class="btn btn-ghost btn-klein">' + (f.feedback ? 'Bijwerken' : 'Opslaan') + '</button></form>'
+          : f.feedback ? '<span class="lb-fb-tekst">' + BALLON + ' <b>Klant:</b> ' + esc(f.feedback) + '</span>' : '') +
+        '</div>' : '');
     document.body.appendChild(lbEl);
     $('[data-lb=sluit]', lbEl).focus();
+    var gs = $('#lb-gebruik', lbEl);
+    if (gs) gs.onchange = function () { var v = gs.value || null; api('foto_gebruik', { foto_id: f.id, gebruik: v }).then(function () { f.gebruik = v; toast('Opgeslagen.'); lichtbak(i); }, function (er) { toast(er.message); }); };
+    var fbf = $('#lb-fb', lbEl);
+    if (fbf) fbf.addEventListener('submit', function (e) {
+      e.preventDefault(); var t = $('#lb-fb-in', lbEl).value.trim();
+      api('foto_feedback', { foto_id: f.id, tekst: t }).then(function () { f.feedback = t || null; toast(t ? 'Opmerking opgeslagen.' : 'Opmerking verwijderd.'); var y = window.scrollY; tekenAlbum(); window.scrollTo(0, y); lichtbak(i); }, function (er) { toast(er.message); });
+    });
   }
   function sluitLichtbak() { if (lbEl) { lbEl.remove(); lbEl = null; } }
   function downloadFoto(f) {
+    if (HUIDIG && HUIDIG.gedeeld) { if (!f.download) return Promise.resolve(); var d = document.createElement('a'); d.href = f.download; d.rel = 'noopener'; d.download = f.naam; document.body.appendChild(d); d.click(); d.remove(); return Promise.resolve(); }
     return api('download', { foto_id: f.id }).then(function (j) {
       var a = document.createElement('a'); a.href = j.url; a.rel = 'noopener'; a.download = f.naam; document.body.appendChild(a); a.click(); a.remove();
     });
@@ -382,7 +485,7 @@
             var p = Math.min(100, Math.round((x.eigen / x.quota_bytes) * 100));
             return '<tr><td><div style="display:flex;align-items:center;gap:12px"><span class="rondje grad">' + esc(x.naam.charAt(0).toUpperCase()) + '</span><span style="display:flex;flex-direction:column;gap:2px"><b>' + esc(x.naam) + '</b><span style="color:#B3A9BD;font-size:13px">' + esc(x.email) + '</span></span></div></td>' +
               '<td><div style="display:flex;flex-direction:column;gap:6px;min-width:150px"><span style="font-size:13px;color:#B3A9BD"><b style="color:#F7F3FA">' + gb(x.eigen) + '</b> van ' + gb(x.quota_bytes) + '</span><div class="balk" style="height:8px"><span style="width:' + p + '%"></span></div></div></td>' +
-              '<td>' + x.shoots + '</td><td style="color:#B3A9BD;font-size:14px">' + (x.laatst_ingelogd ? datum(x.laatst_ingelogd) : 'Nog niet') + '</td><td>' + status(x) + '</td>' +
+              '<td>' + x.shoots + (x.ongelezen ? ' <span class="pil st-aangevraagd" title="Ongelezen berichten">' + x.ongelezen + ' bericht' + (x.ongelezen > 1 ? 'en' : '') + '</span>' : '') + '</td><td style="color:#B3A9BD;font-size:14px">' + (x.laatst_ingelogd ? datum(x.laatst_ingelogd) : 'Nog niet') + '</td><td>' + status(x) + '</td>' +
               '<td style="text-align:right"><a class="btn btn-ghost btn-klein" href="#/beheer/klant/' + esc(x.id) + '">Openen</a></td></tr>';
           }).join('') + '</tbody></table></div>' : '<div class="leeg">Nog geen klanten. Klik op <b>Klant toevoegen</b> om je eerste klant uit te nodigen.</div>') +
         '</main>');
@@ -472,12 +575,12 @@
   }
 
   var B = null; // formulier-staat
-  function boekScherm() {
-    B = { soorten: [], datum: null, maand: null, bezet: [], flex: false, dagdeel: 'geen voorkeur' };
+  function boekScherm(ref) {
+    B = { soorten: [], datum: null, maand: null, bezet: [], flex: false, dagdeel: 'geen voorkeur', ref: null };
     var nu = new Date(); B.maand = new Date(nu.getFullYear(), nu.getMonth(), 1);
     scherm(pubKop() + '<main class="in boek">' +
       '<div class="boek-kop"><span class="grad-text eyebrow">SHOOT BOEKEN</span><h1 class="titel">Vertel ons wat je <span class="grad-text">in gedachten</span> hebt.</h1>' +
-      '<p class="sub">Je hebt geen account nodig. Je hoort binnen 24 uur van ons met een voorstel en een prijs op maat. Aanvragen is gratis en zit nergens aan vast.</p></div>' +
+      '<p class="sub">Je hebt geen account nodig. Je hoort binnen 24 uur van ons met een voorstel en een prijs op maat. Aanvragen is gratis en zit nergens aan vast.</p><div id="ref-banner" hidden></div></div>' +
       '<form id="boek" class="boek-form" novalidate>' +
       '<section class="kaart stap"><div class="stap-kop"><span class="nr grad">1</span><div><h2>Wat wil je laten maken?</h2><p>Kies er één of meer.</p></div></div>' +
       '<div class="keuzes" role="group" aria-label="Soort shoot">' + Object.keys(SOORT).map(function (k) {
@@ -504,6 +607,7 @@
       '</form></main>');
     tekenKalender();
     api('bezet').then(function (j) { B.bezet = j.datums || []; tekenKalender(); }, function () {});
+    if (ref) api('ref_info', { code: ref }).then(function (r) { if (!r.geldig) return; B.ref = ref; var bn = $('#ref-banner'); if (!bn) return; bn.hidden = false; bn.className = 'ref-banner'; bn.innerHTML = '<span class="grad rondje" style="width:40px;height:40px">%</span><span><b>' + esc(r.voornaam) + ' heeft je doorverwezen!</b> Je krijgt ' + esc(KORTING) + ' korting op je eerste shoot.</span>'; }, function () {});
     $('#b-flex').onchange = function () { B.flex = this.checked; };
     $('#boek').addEventListener('change', function () { $('#b-fout').hidden = true; });
     $('#boek').addEventListener('submit', verstuurBoeking);
@@ -540,7 +644,7 @@
     api('aanvraag_doen', {
       soorten: soorten, datum: B.datum, datum_flexibel: B.flex, dagdeel: ($('input[name=dagdeel]:checked') || {}).value,
       locatie: loc ? loc + (mee ? ' (LUX mag meedenken)' : '') : (mee ? '' : ''), naam: naam, email: mail,
-      telefoon: $('#b-tel').value.trim(), wens: $('#b-wens').value.trim(), website: $('#b-web').value
+      telefoon: $('#b-tel').value.trim(), wens: $('#b-wens').value.trim(), website: $('#b-web').value, ref: B.ref
     }).then(function (j) {
       scherm(pubKop() + '<main class="in boek"><div class="kaart bedankt"><span class="vink grad">' + I.vink + '</span>' +
         '<h1 class="titel" style="font-size:clamp(28px,4vw,40px)">Aanvraag verstuurd!</h1>' +
@@ -594,7 +698,8 @@
   var STATUS_NAAM = { aangevraagd: 'Nieuw', voorstel: 'Voorstel gestuurd', bevestigd: 'Bevestigd', geschoten: 'Geschoten', bewerking: 'In bewerking', klaar: 'Klaar', afgewezen: 'Afgewezen' };
   function beheerTabs(actief, nieuw) {
     return '<nav class="tabs" aria-label="Beheer"><a href="#/beheer" class="' + (actief === 'klanten' ? 'actief' : '') + '"' + (actief === 'klanten' ? ' aria-current="page"' : '') + '>Klanten</a>' +
-      '<a href="#/beheer/aanvragen" class="' + (actief === 'aanvragen' ? 'actief' : '') + '"' + (actief === 'aanvragen' ? ' aria-current="page"' : '') + '>Aanvragen' + (nieuw ? ' <span class="teller grad">' + nieuw + '</span>' : '') + '</a></nav>';
+      '<a href="#/beheer/aanvragen" class="' + (actief === 'aanvragen' ? 'actief' : '') + '"' + (actief === 'aanvragen' ? ' aria-current="page"' : '') + '>Aanvragen' + (nieuw ? ' <span class="teller grad">' + nieuw + '</span>' : '') + '</a>' +
+      '<a href="#/beheer/reviews" class="' + (actief === 'reviews' ? 'actief' : '') + '"' + (actief === 'reviews' ? ' aria-current="page"' : '') + '>Reviews</a></nav>';
   }
   function aanvraagPil(s) { return '<span class="pil st-' + s + '">' + STATUS_NAAM[s] + '</span>'; }
   function aanvragenScherm() {
@@ -632,7 +737,8 @@
       '<dt>Wat</dt><dd><span class="soort-pillen">' + (a.soorten || []).map(function (s) { return SOORT[s] ? '<span>' + icoon(s, 15) + SOORT[s].t + '</span>' : ''; }).join('') + '</span></dd>' +
       '<dt>Gewenste datum</dt><dd>' + (a.datum ? esc(langeDatum(a.datum)) + (a.datum_flexibel ? ' (flexibel)' : '') : 'Geen voorkeur') + (a.dagdeel && a.dagdeel !== 'geen voorkeur' ? ' · ' + esc(a.dagdeel) : '') + '</dd>' +
       '<dt>Locatie</dt><dd>' + esc(a.locatie || 'LUX mag meedenken') + '</dd>' +
-      '<dt>Aangevraagd</dt><dd>' + esc(datum(a.aangemaakt)) + '</dd></dl>' +
+      '<dt>Aangevraagd</dt><dd>' + esc(datum(a.aangemaakt)) + '</dd>' +
+      (a.ref_code ? '<dt>Doorverwezen</dt><dd><span class="pil st-aangevraagd">' + esc(KORTING) + ' korting</span> via ' + esc(a.ref_naam || a.ref_code) + '</dd>' : '') + '</dl>' +
       (a.wens ? '<p class="bericht" style="white-space:pre-wrap">' + esc(a.wens) + '</p>' : '') +
       '<div class="knoppen">' + (a.album_id ? '<a class="btn btn-ghost btn-klein" href="#/album/' + esc(a.album_id) + '">Shoot-album openen</a>' : '') + (a.klant_id ? '<a class="btn btn-ghost btn-klein" href="#/beheer/klant/' + esc(a.klant_id) + '">Klant openen</a>' : '') +
       '<a class="btn btn-ghost btn-klein" href="#/volg/' + esc(a.volg_code) + '" target="_blank" rel="noopener">Bekijk als klant</a></div>' +
@@ -662,12 +768,191 @@
     });
   }
 
+  /* ---------- social formaten ---------- */
+  var FORMATEN = [
+    { k: 'post', t: 'Instagram post', s: '4:5', w: 1080, h: 1350 },
+    { k: 'vierkant', t: 'Vierkant', s: '1:1', w: 1080, h: 1080 },
+    { k: 'story', t: 'Story & Reels', s: '9:16', w: 1080, h: 1920 },
+    { k: 'banner', t: 'LinkedIn & website', s: '1,91:1', w: 1200, h: 628 }
+  ];
+  function formaatVenster(f) {
+    var ov = document.createElement('div');
+    ov.className = 'overlay'; ov.style.zIndex = 35; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'fm-titel');
+    ov.innerHTML = '<div class="kaart modal in formaat-modal"><button type="button" class="icon-btn sluit" aria-label="Sluiten" data-n="sluit">' + I.x + '</button>' +
+      '<div><h2 id="fm-titel">Social formaten</h2><p class="sub" style="font-size:14px;margin-top:6px">Kies een formaat en sleep de foto om hem goed in beeld te zetten.</p></div>' +
+      '<div class="chips" role="radiogroup" aria-label="Formaat">' + FORMATEN.map(function (x, i) { return '<label class="chip"><input type="radio" name="fm" value="' + i + '"' + (i === 0 ? ' checked' : '') + '><span>' + x.t + ' <small style="opacity:.7;margin-left:4px">' + x.s + '</small></span></label>'; }).join('') + '</div>' +
+      '<div class="fm-podium"><canvas id="fm-canvas" aria-label="Voorbeeld van de uitsnede"></canvas><div class="laden" id="fm-laden" style="position:absolute;inset:0;padding:0;align-items:center"><span></span></div></div>' +
+      '<div class="fm-zoom"><label for="fm-zoom">Inzoomen</label><input id="fm-zoom" type="range" min="1" max="2.5" step="0.01" value="1"></div>' +
+      '<p class="melding" id="fm-fout" role="alert" hidden></p>' +
+      '<div class="knoppen"><button type="button" class="btn btn-grad" id="fm-download">' + I.down + 'Opslaan</button>' + (navigator.share ? '<button type="button" class="btn btn-ghost" id="fm-deel">' + DEEL + 'Delen</button>' : '') + '</div></div>';
+    document.body.appendChild(ov);
+    $$('[data-n=sluit]', ov).forEach(function (b) { b.onclick = function () { ov.remove(); }; });
+    var cv = $('#fm-canvas', ov), cx = cv.getContext('2d'), img = new Image(), st = { fm: FORMATEN[0], zoom: 1, px: 0.5, py: 0.5 };
+    function teken() {
+      var fm = st.fm, maxW = Math.min(520, ov.querySelector('.fm-podium').clientWidth), maxH = Math.min(window.innerHeight * 0.48, 520);
+      var schaal = Math.min(maxW / fm.w, maxH / fm.h);
+      cv.style.width = Math.round(fm.w * schaal) + 'px'; cv.style.height = Math.round(fm.h * schaal) + 'px';
+      cv.width = fm.w; cv.height = fm.h; render(cx, fm.w, fm.h);
+    }
+    function render(c, W, H) {
+      if (!img.naturalWidth) return;
+      var s = Math.max(W / img.naturalWidth, H / img.naturalHeight) * st.zoom;
+      var w = img.naturalWidth * s, h = img.naturalHeight * s;
+      var x = (W - w) * st.px, y = (H - h) * st.py;
+      c.fillStyle = '#0D0A12'; c.fillRect(0, 0, W, H); c.imageSmoothingQuality = 'high'; c.drawImage(img, x, y, w, h);
+    }
+    function laad(src, reserve) {
+      img = new Image(); img.crossOrigin = 'anonymous';
+      img.onload = function () { $('#fm-laden', ov).hidden = true; teken(); };
+      img.onerror = function () { if (reserve) laad(reserve); else { $('#fm-laden', ov).hidden = true; var e = $('#fm-fout', ov); e.hidden = false; e.textContent = 'Deze foto kon niet worden geladen.'; } };
+      img.src = src;
+    }
+    var origOk = /^image\/(jpe?g|png|webp)/.test(f.type) && f.origineel && f.grootte < 40 * 1024 * 1024;
+    laad(origOk ? f.origineel : (f.groot || f.origineel), origOk ? f.groot : null);
+    $$('input[name=fm]', ov).forEach(function (r) { r.onchange = function () { st.fm = FORMATEN[Number(r.value)]; st.px = st.py = 0.5; teken(); }; });
+    $('#fm-zoom', ov).oninput = function () { st.zoom = Number(this.value); teken(); };
+    var sleep = null;
+    cv.addEventListener('pointerdown', function (e) { sleep = { x: e.clientX, y: e.clientY, px: st.px, py: st.py }; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', function (e) {
+      if (!sleep || !img.naturalWidth) return;
+      var r = cv.getBoundingClientRect(), fm = st.fm, s = Math.max(fm.w / img.naturalWidth, fm.h / img.naturalHeight) * st.zoom;
+      var overX = img.naturalWidth * s - fm.w, overY = img.naturalHeight * s - fm.h, sch = fm.w / r.width;
+      if (overX > 0) st.px = Math.max(0, Math.min(1, sleep.px - (e.clientX - sleep.x) * sch / overX));
+      if (overY > 0) st.py = Math.max(0, Math.min(1, sleep.py - (e.clientY - sleep.y) * sch / overY));
+      render(cx, fm.w, fm.h);
+    });
+    cv.addEventListener('pointerup', function () { sleep = null; });
+    cv.addEventListener('keydown', function (e) { var d = { ArrowLeft: [-.05, 0], ArrowRight: [.05, 0], ArrowUp: [0, -.05], ArrowDown: [0, .05] }[e.key]; if (!d) return; e.preventDefault(); st.px = Math.max(0, Math.min(1, st.px + d[0])); st.py = Math.max(0, Math.min(1, st.py + d[1])); teken(); });
+    cv.tabIndex = 0;
+    function blob() { return new Promise(function (res, rej) { try { cv.toBlob(function (b) { b ? res(b) : rej(new Error('Opslaan lukte niet.')); }, 'image/jpeg', 0.92); } catch (e) { rej(new Error('Deze foto kan niet worden bewerkt (beveiliging van de browser).')); } }); }
+    function naam() { return f.naam.replace(/\.[^.]+$/, '') + '-' + st.fm.k + '.jpg'; }
+    $('#fm-download', ov).onclick = function () { blob().then(function (b) { var u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = naam(); document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 4000); toast('Opgeslagen als ' + naam()); }, function (e) { toast(e.message); }); };
+    var dk = $('#fm-deel', ov);
+    if (dk) dk.onclick = function () { blob().then(function (b) { var file = new File([b], naam(), { type: 'image/jpeg' }); if (navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file] }); throw new Error('Delen wordt op dit apparaat niet ondersteund. Gebruik Opslaan.'); }).catch(function (e) { if (e && e.name !== 'AbortError') toast(e.message); }); };
+  }
+
+  /* ---------- delen via link ---------- */
+  function deelVenster() {
+    var a = HUIDIG.album;
+    var ov = document.createElement('div');
+    ov.className = 'overlay'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'dl-titel');
+    ov.innerHTML = '<form class="kaart modal in" novalidate><button type="button" class="icon-btn sluit" aria-label="Sluiten" data-n="sluit">' + I.x + '</button>' +
+      '<div><h2 id="dl-titel">“' + esc(a.titel) + '” delen</h2><p class="sub" style="font-size:14px;margin-top:6px">Maak een link voor familie, vrienden of collega’s. Zij hebben geen account nodig.</p></div>' +
+      (a.soort === 'lux' && a.gebruik === 'prive' ? '<p class="melding goed">Let op: deze foto’s zijn alleen voor privégebruik. Deel ze dus niet op social media.</p>' : '') +
+      '<label class="vink-rij"><input type="checkbox" id="dl-down">Ze mogen de foto’s ook downloaden</label>' +
+      '<div class="velden2"><div class="veld"><label for="dl-dagen">Link verloopt</label><select id="dl-dagen"><option value="7">Na 7 dagen</option><option value="30" selected>Na 30 dagen</option><option value="0">Nooit</option></select></div>' +
+      '<div class="veld"><label for="dl-ww">Wachtwoord <span style="font-weight:500;color:#8E849A">(optioneel)</span></label><input id="dl-ww" type="text" autocomplete="off" maxlength="100"></div></div>' +
+      '<p class="melding" id="dl-fout" role="alert" hidden></p>' +
+      '<button type="submit" class="btn btn-grad" style="align-self:flex-start">' + DEEL + 'Link maken</button>' +
+      '<div id="dl-lijst" class="dl-lijst"></div></form>';
+    document.body.appendChild(ov);
+    $$('[data-n=sluit]', ov).forEach(function (b) { b.onclick = function () { ov.remove(); }; });
+    function lijst() {
+      api('deel_lijst', { album_id: a.id }).then(function (r) {
+        var l = $('#dl-lijst', ov); if (!l) return;
+        l.innerHTML = r.links.length ? '<h3>Je links</h3>' + r.links.map(function (x) {
+          var verlopen = x.verloopt && new Date(x.verloopt) < new Date();
+          return '<div class="dl-item"><div><code>' + esc(x.url.replace('https://', '')) + '</code><small>' + (verlopen ? 'Verlopen' : x.verloopt ? 'Geldig tot ' + esc(datum(x.verloopt)) : 'Verloopt niet') + ' · ' + (x.download ? 'met download' : 'alleen bekijken') + (x.wachtwoord ? ' · wachtwoord' : '') + ' · ' + x.bekeken + '× bekeken</small></div>' +
+            '<div class="knoppen"><button type="button" class="btn btn-ghost btn-klein" data-kopieer="' + esc(x.url) + '">Kopiëren</button><button type="button" class="btn btn-rood btn-klein" data-intrek="' + esc(x.id) + '">Intrekken</button></div></div>';
+        }).join('') : '';
+        $$('[data-kopieer]', l).forEach(function (b) { b.onclick = function () { kopieer(b.dataset.kopieer, a.titel); }; });
+        $$('[data-intrek]', l).forEach(function (b) { b.onclick = function () { api('deel_intrekken', { id: b.dataset.intrek }).then(function () { toast('Link ingetrokken.'); lijst(); }, function (er) { toast(er.message); }); }; });
+      }, function () {});
+    }
+    lijst();
+    $('form', ov).addEventListener('submit', function (e) {
+      e.preventDefault(); var b = $('button[type=submit]', ov); b.disabled = true;
+      api('deel_maken', { album_id: a.id, download: $('#dl-down', ov).checked, dagen: Number($('#dl-dagen', ov).value), wachtwoord: $('#dl-ww', ov).value })
+        .then(function (r) { b.disabled = false; $('#dl-ww', ov).value = ''; kopieer(r.url, a.titel); lijst(); }, function (er) { b.disabled = false; var f = $('#dl-fout', ov); f.hidden = false; f.textContent = er.message; });
+    });
+  }
+  function kopieer(url, titel) {
+    if (navigator.share && /iphone|ipad|android/i.test(navigator.userAgent)) { navigator.share({ title: titel, text: 'Bekijk de foto’s van ' + titel, url: url }).catch(function () {}); return; }
+    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { toast('Link gekopieerd.'); }, function () { prompt('Kopieer deze link:', url); });
+  }
+  function gedeeldScherm(code, ww) {
+    scherm(pubKop() + '<main>' + laden() + '</main>');
+    api('gedeeld', { code: code, wachtwoord: ww || '' }).then(function (j) {
+      if (j.wachtwoordNodig) return wachtwoordScherm(code);
+      HUIDIG = { gedeeld: true, album: { titel: j.album.titel, soort: j.album.soort }, magBewerken: false,
+        fotos: j.fotos.map(function (f) { return { id: f.id, naam: f.naam, type: f.type, mini: f.mini, groot: f.groot, origineel: f.video || f.groot, download: f.download, grootte: 0 }; }) };
+      scherm(pubKop() + '<main class="in" style="gap:26px">' +
+        '<div class="rij"><div style="display:flex;flex-direction:column;gap:8px"><span class="grad-text eyebrow">GEDEELD DOOR ' + esc((j.van || '').toUpperCase()) + '</span><h1 class="titel">' + esc(j.album.titel) + '</h1><span class="sub" style="font-size:15px">' + fotos(j.fotos.length) + (j.album.soort === 'lux' ? ' · gemaakt door LUX Media' : '') + '</span></div>' +
+        (j.download && j.fotos.length ? '<div class="knoppen"><button type="button" class="btn btn-ghost" data-actie="alles">' + I.down + 'Alles downloaden</button></div>' : '') + '</div>' +
+        (j.fotos.length ? '<div class="fotos">' + HUIDIG.fotos.map(function (f, i) { var video = /^video\//.test(f.type);
+          return '<div class="foto-w"><button type="button" class="foto" data-foto="' + i + '" aria-label="' + esc((video ? 'Video ' : 'Foto ') + (i + 1)) + '">' + (f.mini ? '<img src="' + esc(f.mini) + '" alt="" loading="lazy">' : I.beeld) + (video ? '<span class="speel">' + I.speel + '</span>' : '') + '</button></div>'; }).join('') + '</div>' : '<div class="leeg">Dit album is leeg.</div>') +
+        '<div class="kaart reclame"><div><span class="grad-text eyebrow">LUX MEDIA</span><h2>Ook zulke beelden van jezelf of je bedrijf?</h2><p class="sub">Fotografie, video, drone en social content. Het liefst op een mooie locatie buiten. Vraag vrijblijvend een shoot aan.</p></div>' +
+        '<div class="knoppen"><a class="btn btn-grad" href="#/boeken">Boek een shoot</a><a class="btn btn-ghost" href="https://lux-media.nl">Bekijk ons werk</a></div></div></main>');
+    }, function (e) {
+      if (/wachtwoord/i.test(e.message)) return wachtwoordScherm(code, e.message);
+      scherm(pubKop() + '<main class="in boek"><div class="kaart bedankt"><h1 class="titel" style="font-size:32px">Link niet beschikbaar</h1><p class="sub">' + esc(e.message) + '</p><div class="knoppen" style="justify-content:center"><a class="btn btn-grad" href="https://lux-media.nl">Naar lux-media.nl</a></div></div></main>');
+    });
+  }
+  function wachtwoordScherm(code, melding) {
+    scherm(pubKop() + '<main class="in boek"><form class="kaart bedankt" id="ww-form" style="align-items:stretch;text-align:left"><h1 class="titel" style="font-size:30px">Dit album is beveiligd</h1><p class="sub">Vul het wachtwoord in dat je hebt gekregen.</p>' +
+      (melding ? '<p class="melding" role="alert">' + esc(melding) + '</p>' : '') +
+      '<div class="veld"><label for="ww-in">Wachtwoord</label><input id="ww-in" type="password" autocomplete="off" required></div><button type="submit" class="btn btn-grad">Bekijken</button></form></main>');
+    $('#ww-in').focus();
+    $('#ww-form').addEventListener('submit', function (e) { e.preventDefault(); gedeeldScherm(code, $('#ww-in').value); });
+  }
+
+  /* ---------- review & doorverwijzen ---------- */
+  var KORTING = CFG.VRIEND_KORTING || '10%';
+  function reviewKaart(r) {
+    return '<section class="kaart review-kaart" id="review"><div><span class="grad-text eyebrow">JOUW MENING</span><h2 class="sectie" style="font-size:22px;margin-top:6px">Hoe vond je “' + esc(r.titel) + '”?</h2><p class="sub" style="font-size:14px;margin-top:6px">Je review helpt ons enorm. Het kost je maar een halve minuut.</p></div>' +
+      '<form id="rv-form" novalidate><div class="sterren" role="radiogroup" aria-label="Aantal sterren">' + [1, 2, 3, 4, 5].map(function (n) { return '<label><input type="radio" name="rv-s" value="' + n + '"><span aria-hidden="true">★</span><span class="sr">' + n + ' ster' + (n > 1 ? 'ren' : '') + '</span></label>'; }).join('') + '</div>' +
+      '<div class="veld"><label for="rv-t">Wat vond je ervan? <span style="font-weight:500;color:#8E849A">(optioneel)</span></label><textarea id="rv-t" rows="3" maxlength="2000"></textarea></div>' +
+      '<label class="vink-rij"><input type="checkbox" id="rv-m" checked>LUX mag mijn review (met voornaam) op de website zetten</label>' +
+      '<p class="melding" id="rv-fout" role="alert" hidden></p><button type="submit" class="btn btn-grad" style="align-self:flex-start">Review versturen</button></form></section>';
+  }
+  function refKaart() {
+    return '<section class="kaart ref-kaart" id="ref"><div class="ref-tekst"><span class="eyebrow" style="color:#0D0A12">DEEL LUX MET EEN VRIEND</span><h2>Jullie krijgen allebei ' + esc(KORTING) + ' korting</h2><p>Stuur je persoonlijke link naar een vriend. Boekt die een shoot, dan krijgt je vriend ' + esc(KORTING) + ' korting en jij ook op je volgende shoot.</p></div>' +
+      '<div class="ref-link"><code id="ref-url">…</code><div class="knoppen"><button type="button" class="btn btn-dark btn-klein" data-actie="ref-deel">' + DEEL + 'Link delen</button></div><small id="ref-tel"></small></div></section>';
+  }
+  function koppelReview(r) {
+    var f = $('#rv-form'); if (!f) return;
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var s = $('input[name=rv-s]:checked', f), fe = $('#rv-fout');
+      if (!s) { fe.hidden = false; fe.textContent = 'Kies eerst het aantal sterren.'; return; }
+      var b = $('button[type=submit]', f); b.disabled = true;
+      api('review_geven', { album_id: r.album_id, sterren: Number(s.value), tekst: $('#rv-t').value, mag_tonen: $('#rv-m').checked }).then(function () {
+        var k = $('#review'); k.outerHTML = '<section class="kaart review-kaart bedankt-klein"><span class="vink grad">' + I.vink + '</span><div><h2 class="sectie" style="font-size:20px">Dankjewel!</h2><p class="sub" style="font-size:14px">Je review is binnen. Super fijn.</p></div></section>' + ($('#ref') ? '' : refKaart());
+        vulRef();
+      }, function (er) { b.disabled = false; fe.hidden = false; fe.textContent = er.message; });
+    });
+  }
+  var REF = null;
+  function vulRef() {
+    if (!$('#ref')) return;
+    api('mijn_ref').then(function (r) { REF = r; var u = $('#ref-url'); if (u) u.textContent = r.url.replace('https://', ''); var t = $('#ref-tel'); if (t && r.aanmeldingen) t.textContent = r.aanmeldingen + (r.aanmeldingen === 1 ? ' vriend heeft' : ' vrienden hebben') + ' via jouw link een shoot aangevraagd.'; }, function () {});
+  }
+
+  /* ---------- beheer: reviews ---------- */
+  function reviewsScherm() {
+    scherm(kop() + '<main>' + laden() + '</main>');
+    Promise.all([api('reviews'), api('aanvragen').catch(function () { return { aanvragen: [] }; })]).then(function (rr) {
+      var r = rr[0].reviews, nieuw = rr[1].aanvragen.filter(function (a) { return a.status === 'aangevraagd'; }).length;
+      var gem = r.length ? (r.reduce(function (t, x) { return t + x.sterren; }, 0) / r.length).toFixed(1).replace('.', ',') : '–';
+      scherm(kop() + '<main class="in" style="gap:28px">' + beheerTabs('reviews', nieuw) +
+        '<div style="display:flex;flex-direction:column;gap:8px"><h1 class="titel">Reviews</h1><p class="sub">Klanten krijgen na het bekijken van een opgeleverde shoot de vraag om een review. Reviews met “mag op de website” kun je gebruiken op lux-media.nl.</p></div>' +
+        '<div class="stats"><div class="kaart"><span>Gemiddeld</span><b>' + gem + ' ★</b></div><div class="kaart"><span>Reviews</span><b>' + r.length + '</b></div><div class="kaart"><span>Mag op de website</span><b>' + r.filter(function (x) { return x.mag_tonen; }).length + '</b></div></div>' +
+        (r.length ? '<div class="aanvragen">' + r.map(function (x) {
+          return '<div class="kaart aanvraag" style="cursor:default"><span class="aanvraag-boven"><span class="sterren-tekst" aria-label="' + x.sterren + ' van 5 sterren">' + '★★★★★'.slice(0, x.sterren) + '<span style="color:#3A3145">' + '★★★★★'.slice(x.sterren) + '</span></span><span class="wanneer-k">' + esc(datum(x.aangemaakt)) + '</span></span>' +
+            '<b class="aanvraag-naam">' + esc(x.naam || 'Klant') + '</b>' + (x.tekst ? '<p class="sub" style="font-size:15px">“' + esc(x.tekst) + '”</p>' : '') +
+            '<span class="aanvraag-info"><span>' + esc(x.album || '') + '</span><span>' + (x.mag_tonen ? '<span class="pil st-klaar">Mag op de website</span>' : '<span class="pil uitgenodigd">Alleen voor LUX</span>') + '</span></span></div>';
+        }).join('') + '</div>' : '<div class="leeg">Nog geen reviews.</div>') + '</main>');
+    }, function (e) { scherm(kop() + '<main>' + fout(e) + '</main>'); });
+  }
+
   /* ---------- klikken ---------- */
   document.addEventListener('click', function (e) {
-    var t = e.target.closest ? e.target.closest('[data-actie],[data-album],[data-foto],[data-lb],[data-aanvraag],[data-filter]') : null;
+    var t = e.target.closest ? e.target.closest('[data-actie],[data-album],[data-foto],[data-lb],[data-aanvraag],[data-filter],[data-hart],[data-albumfilter]') : null;
     if (!t) return;
     if (t.dataset.album) { location.hash = '#/album/' + t.dataset.album; return; }
     if (t.dataset.aanvraag) { aanvraagVenster(t.dataset.aanvraag); return; }
+    if (t.dataset.hart) { wisselHart(Number(t.dataset.hart)); return; }
+    if (t.dataset.albumfilter) { FILTER = t.dataset.albumfilter; tekenAlbum(); return; }
     if (t.dataset.filter) { AFILTER = t.dataset.filter; tekenAanvragen(); return; }
     if (t.dataset.foto) { lichtbak(Number(t.dataset.foto)); return; }
     if (t.dataset.lb) {
@@ -676,6 +961,8 @@
       if (t.dataset.lb === 'vorige') lichtbak((lbIndex - 1 + n) % n);
       if (t.dataset.lb === 'volgende') lichtbak((lbIndex + 1) % n);
       if (t.dataset.lb === 'download') downloadFoto(f).catch(function (er) { toast(er.message); });
+      if (t.dataset.lb === 'hart') wisselHart(lbIndex);
+      if (t.dataset.lb === 'formaat') formaatVenster(f);
       if (t.dataset.lb === 'weg' && confirm('Weet je zeker dat je “' + f.naam + '” wilt verwijderen? Dit kan niet ongedaan worden gemaakt.')) {
         api('foto_verwijderen', { foto_id: f.id }).then(function () { sluitLichtbak(); toast('Verwijderd.'); albumScherm(HUIDIG.album.id); }, function (er) { toast(er.message); });
       }
@@ -706,6 +993,15 @@
       api('shoot_klaar', { album_id: HUIDIG.album.id, mailen: mailen }).then(function () { toast(mailen ? 'Klaargezet en gemaild.' : 'Klaargezet.'); albumScherm(HUIDIG.album.id); }, function (er) { toast(er.message); });
     }
     if (a === 'klant-nieuw') nieuweKlant();
+    if (a === 'delen') deelVenster();
+    if (a === 'naar-chat') { var c = $('#chat'); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(function () { var ci = $('#chat-in'); if (ci) ci.focus({ preventScroll: true }); }, 500); } }
+    if (a === 'ref-deel' && REF) kopieer(REF.url, 'LUX Media — ' + KORTING + ' korting op je shoot');
+    if (a === 'keuze') {
+      var nf = HUIDIG.fotos.filter(function (x) { return x.favoriet; }).length;
+      if (confirm('Je keuze doorsturen naar LUX? (' + nf + ' favorieten)\nJe kunt daarna nog steeds aanpassen en opnieuw doorsturen.')) {
+        api('keuze_versturen', { album_id: HUIDIG.album.id }).then(function () { HUIDIG.album.keuze_verstuurd = new Date().toISOString(); toast('Doorgestuurd! LUX gaat ermee aan de slag.'); tekenAlbum(); }, function (er) { toast(er.message); });
+      }
+    }
     if (a === 'boeklink') { var l = location.origin + '/boeken'; (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(function () { toast('Gekopieerd: ' + l); }, function () { prompt('Kopieer deze link:', l); }); }
     if (a === 'uitnodigen') api('klant_uitnodigen', { klant_id: HUIDIG_KLANT }).then(function () { toast('Uitnodiging verstuurd.'); }, function (er) { toast(er.message); });
     if (a === 'pauze') {
@@ -720,6 +1016,8 @@
     }
   });
   document.addEventListener('keydown', function (e) {
+    var bovenop = $$('.overlay').filter(function (o) { return o !== lbEl; }).pop();
+    if (bovenop && lbEl) { if (e.key === 'Escape') { var sb = $('.sluit', bovenop); if (sb) sb.click(); } return; }
     if (lbEl) {
       if (e.key === 'Escape') sluitLichtbak();
       if (e.key === 'ArrowLeft') lichtbak((lbIndex - 1 + HUIDIG.fotos.length) % HUIDIG.fotos.length);
@@ -735,13 +1033,16 @@
     $$('.overlay').forEach(function (o) { o.remove(); });
     var h = location.hash.replace(/^#/, '') || '/';
     var m;
-    if (h === '/boeken') return boekScherm();
+    clearTimeout(chatTimer);
+    if (h === '/boeken' || h.indexOf('/boeken?') === 0) return boekScherm((h.match(/[?&]ref=([A-Za-z0-9-]{4,30})/) || [])[1]);
+    if ((m = h.match(/^\/g\/([A-Za-z0-9_-]{12,40})$/))) return gedeeldScherm(m[1]);
     if ((m = h.match(/^\/volg\/([A-Za-z0-9_-]{20,64})$/))) return volgScherm(m[1]);
     if (!T.token) { loginScherm(); return; }
     if ((m = h.match(/^\/album\/([0-9a-f-]{36})$/i))) return albumScherm(m[1]);
     if (T.rol === 'beheer') {
       if ((m = h.match(/^\/beheer\/klant\/([0-9a-f-]{36})$/i))) return klantScherm(m[1]);
       if (h === '/beheer/aanvragen') return aanvragenScherm();
+      if (h === '/beheer/reviews') return reviewsScherm();
       return beheerScherm();
     }
     return home();
